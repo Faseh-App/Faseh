@@ -1,0 +1,5254 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>فصيح — كاتب خطاباتك الذكي</title>
+  <meta name="description" content="أداة ذكاء اصطناعي تتعلّم أسلوبك وتكتب خطاباتك الرسمية."/>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%92%3C/text%3E%3C/svg%3E"/>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <style>
+    html,body{margin:0;background:#FCFCFB}
+    #ld{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#FCFCFB;z-index:9999;font-family:system-ui,sans-serif;color:#1A1812}
+    #ld .sp{width:34px;height:34px;border:3px solid rgba(168,133,74,.18);border-top-color:#A8854A;border-radius:50%;animation:ls .8s linear infinite}
+    @keyframes ls{to{transform:rotate(360deg)}}
+    #ld p{font-size:14px;margin:0}
+  </style>
+</head>
+<body>
+  <div id="ld"><div class="sp"></div><p>جارٍ تحميل فصيح...</p></div>
+  <div id="root"></div>
+
+  <script>
+  /* ════════════════════════════════════════════════
+     🔑 مفتاح Anthropic API
+     ضع مفتاحك هنا قبل نشر الموقع.
+     احصل على مفتاحك من: https://console.anthropic.com
+     ════════════════════════════════════════════════ */
+  const FASIH_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE";
+  /* ════════════════════════════════════════════════ */
+  </script>
+
+  <script>
+/* ─── تخزين البيانات في المتصفح ─── */
+window.storage = {
+  async get(key) {
+    try {
+      const v = localStorage.getItem('fs:' + key);
+      return v === null ? null : {
+        key,
+        value: v
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+  async set(key, value) {
+    try {
+      localStorage.setItem('fs:' + key, value);
+      return {
+        key,
+        value
+      };
+    } catch (e) {
+      throw new Error('فشل الحفظ');
+    }
+  },
+  async delete(key) {
+    try {
+      localStorage.removeItem('fs:' + key);
+      return {
+        key,
+        deleted: true
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+};
+const {
+  useState,
+  useEffect,
+  useRef,
+  useCallback
+} = React;
+
+/* ═══════════════════════════════════════════════════
+   FASIH — Complete Production Website v2.0
+   Design System × Full Functionality
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Constants ─── */
+const MODEL = 'claude-sonnet-4-20250514';
+const PROFILE_LIST_KEY = 'profiles:list';
+const HISTORY_LIST_KEY = 'history:list';
+const TEMPLATE_LIST_KEY = 'templates:list';
+const safeGet = async k => {
+  try {
+    return await window.storage.get(k);
+  } catch {
+    return null;
+  }
+};
+const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+async function loadProfiles() {
+  const r = await safeGet(PROFILE_LIST_KEY);
+  if (!r) return [];
+  try {
+    const ids = JSON.parse(r.value),
+      out = [];
+    for (const id of ids) {
+      const p = await safeGet(`profile:${id}`);
+      if (p) try {
+        out.push(JSON.parse(p.value));
+      } catch {}
+    }
+    return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  } catch {
+    return [];
+  }
+}
+async function saveProfile(p) {
+  await window.storage.set(`profile:${p.id}`, JSON.stringify(p));
+  const r = await safeGet(PROFILE_LIST_KEY);
+  const ids = r ? JSON.parse(r.value) : [];
+  if (!ids.includes(p.id)) {
+    ids.push(p.id);
+    await window.storage.set(PROFILE_LIST_KEY, JSON.stringify(ids));
+  }
+}
+async function deleteProfile(id) {
+  try {
+    await window.storage.delete(`profile:${id}`);
+  } catch {}
+  const r = await safeGet(PROFILE_LIST_KEY);
+  const ids = r ? JSON.parse(r.value) : [];
+  await window.storage.set(PROFILE_LIST_KEY, JSON.stringify(ids.filter(i => i !== id)));
+}
+async function loadHistory() {
+  const r = await safeGet(HISTORY_LIST_KEY);
+  if (!r) return [];
+  try {
+    const ids = JSON.parse(r.value),
+      out = [];
+    for (const id of ids) {
+      const l = await safeGet(`letter:${id}`);
+      if (l) try {
+        out.push(JSON.parse(l.value));
+      } catch {}
+    }
+    return out.sort((a, b) => (b.generatedAt || 0) - (a.generatedAt || 0));
+  } catch {
+    return [];
+  }
+}
+async function saveLetter(l) {
+  await window.storage.set(`letter:${l.id}`, JSON.stringify(l));
+  const r = await safeGet(HISTORY_LIST_KEY);
+  const ids = r ? JSON.parse(r.value) : [];
+  if (!ids.includes(l.id)) {
+    ids.push(l.id);
+    await window.storage.set(HISTORY_LIST_KEY, JSON.stringify(ids));
+  }
+}
+async function deleteLetter(id) {
+  try {
+    await window.storage.delete(`letter:${id}`);
+  } catch {}
+  const r = await safeGet(HISTORY_LIST_KEY);
+  const ids = r ? JSON.parse(r.value) : [];
+  await window.storage.set(HISTORY_LIST_KEY, JSON.stringify(ids.filter(i => i !== id)));
+}
+async function loadTemplates() {
+  const r = await safeGet(TEMPLATE_LIST_KEY);
+  if (!r) return [];
+  try {
+    const ids = JSON.parse(r.value),
+      out = [];
+    for (const id of ids) {
+      const t = await safeGet(`template:${id}`);
+      if (t) try {
+        out.push(JSON.parse(t.value));
+      } catch {}
+    }
+    return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  } catch {
+    return [];
+  }
+}
+async function saveTemplate(t) {
+  await window.storage.set(`template:${t.id}`, JSON.stringify(t));
+  const r = await safeGet(TEMPLATE_LIST_KEY);
+  const ids = r ? JSON.parse(r.value) : [];
+  if (!ids.includes(t.id)) {
+    ids.push(t.id);
+    await window.storage.set(TEMPLATE_LIST_KEY, JSON.stringify(ids));
+  }
+}
+async function deleteTemplate(id) {
+  try {
+    await window.storage.delete(`template:${id}`);
+  } catch {}
+  const r = await safeGet(TEMPLATE_LIST_KEY);
+  const ids = r ? JSON.parse(r.value) : [];
+  await window.storage.set(TEMPLATE_LIST_KEY, JSON.stringify(ids.filter(i => i !== id)));
+}
+
+/* ─── AI ─── */
+async function callClaude(messages, system, maxTokens = 4000) {
+  const body = {
+    model: MODEL,
+    max_tokens: maxTokens,
+    messages
+  };
+  if (system) body.system = system;
+  if (!FASIH_API_KEY) throw new Error('أضف مفتاح API في أعلى الملف');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': FASIH_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`فشل الاتصال (${res.status}): ${err.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+}
+async function analyzeStyle(letters, refs = []) {
+  const txt = letters.map((l, i) => `═══ الخطاب رقم ${i + 1}${l.title ? ` — ${l.title}` : ''} ═══\n${l.content}`).join('\n\n');
+  const rb = refs.length ? `\n\nأدلة تحريرية:\n\n${refs.map((r, i) => `── مرجع ${i + 1}: ${r.name} ──\n${r.content}`).join('\n\n')}` : '';
+  const sys = `أنت محلل أسلوب كتابة عربي خبير.`;
+  const usr = `حلل الخطابات التالية واستخرج البصمة الأسلوبية الدقيقة للكاتب في صورة دليل أسلوبي مفصل قابل للتطبيق:\n\n${txt}${rb}\n\nاستخرج: النبرة، الافتتاح المعتاد، الاختتام، المفردات المميزة، طول الجمل، الضمائر، علامات الترقيم، بصمات مميزة. أعطِ أمثلة حرفية من النصوص. ابدأ مباشرة بالتحليل بدون مقدمة.`;
+  return await callClaude([{
+    role: 'user',
+    content: usr
+  }], sys, 4000);
+}
+async function generateLetterAI(profile, params) {
+  const ex = profile.letters.slice(0, 2).map((l, i) => `── مثال ${i + 1} ──\n${l.content}`).join('\n\n');
+  const refs = profile.references || [];
+  const rb = refs.length ? `\n\n═══ أدلة إلزامية (لها الأولوية المطلقة) ═══\n${refs.map((r, i) => `── ${r.name} ──\n${r.content}`).join('\n\n')}\n\nطبّق صيغ المخاطبة والاختتام الصحيحة حسب رتبة المستلم.` : '';
+  const docs = params.supportingDocs || [];
+  const db = docs.length ? `\n\n═══ مستندات داعمة ═══\n${docs.map((d, i) => `── ${d.name || `مستند ${i + 1}`}${d.purpose ? ` [${d.purpose}]` : ''} ──\n${d.content}`).join('\n\n')}` : '';
+  const sys = `أنت كاتب خطابات عربية محترف يحاكي أسلوب الكاتب بدقة ويلتزم بالأدلة التحريرية.`;
+  const usr = `الدليل الأسلوبي:\n${profile.styleProfile}\n\n═══ أمثلة فعلية ═══\n${ex}${rb}${db}\n\n═══ الخطاب المطلوب ═══\n• المستلم: ${params.recipient}\n• الموضوع: ${params.subject}\n• الهدف: ${params.purpose}${params.keyPoints ? `\n• النقاط: ${params.keyPoints}` : ''}${params.tone ? `\n• النبرة: ${params.tone}` : ''}\n\nاكتب الخطاب كاملاً جاهزاً للإرسال. لا تكتب أي شرح قبله أو بعده.`;
+  return await callClaude([{
+    role: 'user',
+    content: usr
+  }], sys, 3500);
+}
+
+/* ─── Word Export ─── */
+const escapeHtml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const isGreetingLine = l => /السلام عليكم/.test(l) && l.length < 90;
+const isClosingLine = l => l.length < 130 && /^[\s.،,]{0,5}(وتفضلوا[\s\u200f]+بقبول|وتقبلوا[\s\u200f]+(تحياتي|أطيب|قبول)|والسلام\s+عليكم|والله\s+ولي\s+التوفيق|تفضلوا\s+بقبول)/.test(l);
+const FONT_STACK = "'Sakkal Majalla','Traditional Arabic','Simplified Arabic','Tajawal','Arial',sans-serif";
+const isNamePlaceholder = l => /^\[\s*(الاسم|الاسم\s+الثلاثي|اسم\s+المرسل|الموقع|التوقيع|name|signature)\s*\]$/i.test(l.trim().replace(/[،,.\s]+$/g, ''));
+function exportToWord(title, content, template = null) {
+  const rawLines = content.split(/\n+/).map(p => p.trim()).filter(Boolean);
+  const hasName = template && (template.senderName || template.senderTitle);
+  const lines = hasName ? rawLines.filter(l => !isNamePlaceholder(l)) : rawLines;
+  const body = lines.map(line => {
+    const e = escapeHtml(line);
+    if (isClosingLine(line)) return `<p style="font-family:${FONT_STACK};font-weight:bold;text-align:center;margin:24pt 0 24pt 0"><b>${e}</b></p>`;
+    if (isGreetingLine(line)) return `<p style="font-family:${FONT_STACK};font-weight:bold"><b>${e}</b></p>`;
+    return `<p style="font-family:${FONT_STACK}">${e}</p>`;
+  }).join('\n');
+  let hdr = '';
+  if (template) {
+    const t = template;
+    const org = [t.orgLine1 ? `<div style="font-size:12pt;font-family:${FONT_STACK}">${escapeHtml(t.orgLine1)}</div>` : '', t.orgLine2 ? `<div style="font-size:14pt;font-weight:bold;font-family:${FONT_STACK};margin-top:2pt">${escapeHtml(t.orgLine2)}</div>` : '', t.orgLine3 ? `<div style="font-size:11pt;color:#555;font-family:${FONT_STACK};margin-top:2pt">${escapeHtml(t.orgLine3)}</div>` : ''].filter(Boolean).join('');
+    if (org || t.logoDataUrl) {
+      hdr = `<table dir="rtl" style="width:100%;border-collapse:collapse;margin:0 0 24pt 0"><tr><td style="width:35%;vertical-align:top;text-align:right">${t.logoDataUrl ? `<img src="${t.logoDataUrl}" style="max-height:90px;max-width:220px" alt="logo"/>` : ''}  </td><td style="width:65%;vertical-align:top;text-align:left;padding:4pt 16pt 0 0">${org}</td></tr></table><div style="border-top:1.5pt solid #b08d57;margin:0 0 24pt 0"></div>`;
+    }
+  }
+  let sig = '';
+  if (template && (template.senderName || template.senderTitle)) {
+    sig = `<div style="margin-top:32pt;text-align:left;font-family:${FONT_STACK}">${template.senderTitle ? `<div style="font-size:14pt;font-weight:bold">${escapeHtml(template.senderTitle)}</div>` : ''}${template.senderName ? `<div style="font-size:14pt;margin-top:6pt">${escapeHtml(template.senderName)}</div>` : ''}</div>`;
+  }
+  const html = `<!DOCTYPE html><html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>${escapeHtml(title || 'خطاب')}</title><style>@page WordSection1{size:21cm 29.7cm;margin:2.5cm 2.5cm 2.5cm 2.5cm}div.WordSection1{page:WordSection1}body{font-family:${FONT_STACK};font-size:16pt;line-height:1.9;direction:rtl;text-align:right;color:#1a1a1a}p{margin:0 0 12pt 0;text-align:justify}</style></head><body dir='rtl' lang='ar'><div class='WordSection1'>${hdr}${body}${sig}</div></body></html>`;
+  const blob = new Blob(['\uFEFF', html], {
+    type: 'application/msword;charset=utf-8'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(title || 'خطاب').replace(/[\\/:*?"<>|]/g, '_')}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+/* ─── File readers ─── */
+async function readDocxFile(file) {
+  const buf = await file.arrayBuffer();
+  const r = await window.mammoth.extractRawText({
+    arrayBuffer: buf
+  });
+  return r.value || '';
+}
+let _pdfP = null;
+async function loadPdfJs() {
+  if (window.pdfjsLib) return window.pdfjsLib;
+  if (_pdfP) return _pdfP;
+  _pdfP = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
+      try {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        res(window.pdfjsLib);
+      } catch (e) {
+        rej(e);
+      }
+    };
+    s.onerror = () => rej(new Error('فشل تحميل قارئ PDF'));
+    document.head.appendChild(s);
+  });
+  return _pdfP;
+}
+async function readPdfFile(file) {
+  const pj = await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pj.getDocument({
+    data: buf
+  }).promise;
+  let out = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const c = await page.getTextContent();
+    out += c.items.map(it => it.str).join(' ') + '\n\n';
+  }
+  return out.trim();
+}
+async function readAnyFile(file) {
+  const n = file.name.toLowerCase();
+  if (n.endsWith('.pdf')) return await readPdfFile(file);
+  if (n.endsWith('.docx')) return await readDocxFile(file);
+  return await file.text();
+}
+function readImageAsDataUrl(file) {
+  return new Promise((res, rej) => {
+    if (!file.type.startsWith('image/')) return rej(new Error('الملف ليس صورة'));
+    if (file.size > 2 * 1024 * 1024) return rej(new Error('حجم الصورة كبير (الحد الأقصى 2 ميجابايت)'));
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('فشل قراءة الصورة'));
+    r.readAsDataURL(file);
+  });
+}
+const formatDate = ts => new Date(ts).toLocaleDateString('ar', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
+const TONE_PRESETS = [{
+  id: 'default',
+  label: 'الأسلوب الافتراضي',
+  value: ''
+}, {
+  id: 'formal',
+  label: 'أكثر رسمية',
+  value: 'ارفع درجة الرسمية.'
+}, {
+  id: 'warm',
+  label: 'أكثر دفئاً',
+  value: 'أضف مسحة دافئة.'
+}, {
+  id: 'urgent',
+  label: 'إلحاحي',
+  value: 'أبرز عنصر العجلة.'
+}, {
+  id: 'firm',
+  label: 'حازم',
+  value: 'اجعل النبرة أكثر حزماً.'
+}, {
+  id: 'concise',
+  label: 'مختصر',
+  value: 'اكتب خطاباً أقصر وأكثر إيجازاً.'
+}];
+const DOC_PURPOSES = ['استشهاد بنص نظامي أو لائحة', 'الرد على هذا الخطاب', 'سياق مرجعي', 'بيانات ومعلومات داعمة'];
+
+/* ══════════════════════════════════════════════════
+   DESIGN TOKENS + GLOBAL CSS
+   ══════════════════════════════════════════════════ */
+const GlobalStyles = () => /*#__PURE__*/React.createElement("style", null, `
+    @import url('https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Amiri:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --n0:#FFFFFF;--n25:#FCFCFB;--n50:#F7F6F2;--n100:#EFEEE7;--n200:#E2E0D5;
+      --n300:#C9C5B4;--n400:#A39E89;--n500:#7C7763;--n700:#3D3A2E;--n900:#1A1812;
+      --b50:#FBF7EC;--b100:#F5EBC9;--b200:#EFDBA4;--b500:#A8854A;--b600:#8B6D3A;--b700:#6D5530;
+      --g50:#E8F2E2;--g500:#4A7C3B;
+      --w50:#FAF1DC;--w500:#B8842B;
+      --r50:#F5DEDE;--r500:#9B3A3A;
+      --canvas:#FCFCFB;--surface:#F7F6F2;--sr:#FCFCFB;
+      --bs:#EFEEE7;--bd:#E2E0D5;--bk:#C9C5B4;
+      --tp:#1A1812;--ts:#3D3A2E;--tt:#7C7763;--tm:#A39E89;--ti:#FCFCFB;
+      --ac:#A8854A;--ah:#8B6D3A;--as:#FBF7EC;
+      --dp:#FDFBF4;
+      --ff:'IBM Plex Sans Arabic',system-ui,sans-serif;
+      --fd:'Aref Ruqaa','Amiri',serif;
+      --fm:'IBM Plex Mono',monospace;
+      --esf:cubic-bezier(.22,1,.36,1);
+      --esp:cubic-bezier(.34,1.56,.64,1);
+      --ssh:0 1px 2px rgba(26,24,18,.04);
+      --smh:0 2px 8px rgba(26,24,18,.06),0 1px 2px rgba(26,24,18,.04);
+      --slh:0 8px 24px rgba(26,24,18,.08),0 2px 6px rgba(26,24,18,.04);
+      --sbg:0 4px 16px rgba(168,133,74,.12);
+    }
+    html,body{background:var(--canvas);color:var(--tp);font-family:var(--ff);-webkit-font-smoothing:antialiased}
+    button{font-family:var(--ff);cursor:pointer;border:none}
+    input,textarea,select{font-family:var(--ff)}
+    *{letter-spacing:normal}
+    .tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+    .fd{font-family:var(--fd)}
+    ::selection{background:var(--b500);color:var(--ti)}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--n200);border-radius:3px}
+    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    .shimmer{background:linear-gradient(90deg,var(--n100) 0%,var(--n50) 50%,var(--n100) 100%);background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite}
+    @keyframes fadeu{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+    .fu{animation:fadeu 300ms var(--esf) both}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spin-anim{animation:spin .8s linear infinite}
+    @keyframes pdot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.22)}}
+    @keyframes toast-in{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes modal-in{from{opacity:0;transform:scale(.96) translateY(6px)}to{opacity:1;transform:scale(1) translateY(0)}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  `);
+
+/* ══════════════════════════════════════════════════
+   ICONS
+   ══════════════════════════════════════════════════ */
+const I = {
+  Plus: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2.2",
+    strokeLinecap: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 5v14M5 12h14"
+  })),
+  Check: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M20 6L9 17l-5-5"
+  })),
+  X: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M18 6L6 18M6 6l12 12"
+  })),
+  Pen: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"
+  })),
+  Trash: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "3 6 5 6 21 6"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"
+  })),
+  Eye: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "3"
+  })),
+  Upload: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"
+  })),
+  Download: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"
+  })),
+  Refresh: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "23 4 23 10 17 10"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "1 20 1 14 7 14"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"
+  })),
+  Sparkle: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "currentColor",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z"
+  })),
+  Copy: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "9",
+    y: "9",
+    width: "13",
+    height: "13",
+    rx: "2"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"
+  })),
+  Home: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "9 22 9 12 15 12 15 22"
+  })),
+  Mail: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "22,6 12,13 2,6"
+  })),
+  Voice: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"
+  })),
+  Doc: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "14 2 14 8 20 8"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "16",
+    y1: "13",
+    x2: "8",
+    y2: "13"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "16",
+    y1: "17",
+    x2: "8",
+    y2: "17"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "10 9 9 9 8 9"
+  })),
+  Tmpl: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "3",
+    y: "3",
+    width: "18",
+    height: "18",
+    rx: "2"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M3 9h18M9 21V9"
+  })),
+  Hist: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M3 3v5h5M12 7v5l4 2"
+  })),
+  Set: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "3"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
+  })),
+  Zap: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+  })),
+  Reply: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M9 17H5a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3M13 21l-4-4 4-4M9 17h8a2 2 0 002-2v-1"
+  })),
+  ChL: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M15 18l-6-6 6-6"
+  })),
+  ChD: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M6 9l6 6 6-6"
+  })),
+  Back: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M19 12H5M12 19l-7-7 7-7"
+  })),
+  Up: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 19V5M5 12l7-7 7 7"
+  })),
+  Chart: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M3 3v18h18M18 9l-5 5-4-4-3 3"
+  })),
+  Clock: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "10"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M12 6v6l4 2"
+  })),
+  Key: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"
+  })),
+  Alert: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "9",
+    x2: "12",
+    y2: "13"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "17",
+    x2: "12.01",
+    y2: "17"
+  })),
+  Collapse: p => /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    ...p
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M11 19l-7-7 7-7M19 19l-7-7 7-7"
+  }))
+};
+
+/* ══════════════════════════════════════════════════
+   BASE COMPONENTS
+   ══════════════════════════════════════════════════ */
+
+/* ── Logo ── */
+const Logo = () => /*#__PURE__*/React.createElement("svg", {
+  width: "24",
+  height: "28",
+  viewBox: "0 0 44 50",
+  fill: "none"
+}, /*#__PURE__*/React.createElement("g", {
+  stroke: "var(--ac)",
+  strokeWidth: "1.8",
+  strokeLinecap: "round"
+}, /*#__PURE__*/React.createElement("line", {
+  x1: "22",
+  y1: "3",
+  x2: "22",
+  y2: "8"
+}), /*#__PURE__*/React.createElement("line", {
+  x1: "13",
+  y1: "6",
+  x2: "15.5",
+  y2: "9.5"
+}), /*#__PURE__*/React.createElement("line", {
+  x1: "31",
+  y1: "6",
+  x2: "28.5",
+  y2: "9.5"
+}), /*#__PURE__*/React.createElement("line", {
+  x1: "7",
+  y1: "11.5",
+  x2: "10",
+  y2: "13.5"
+}), /*#__PURE__*/React.createElement("line", {
+  x1: "37",
+  y1: "11.5",
+  x2: "34",
+  y2: "13.5"
+})), /*#__PURE__*/React.createElement("path", {
+  d: "M22 12 L31 28 L22 33 L13 28 Z",
+  fill: "var(--tp)"
+}), /*#__PURE__*/React.createElement("rect", {
+  x: "20",
+  y: "33",
+  width: "4",
+  height: "3.5",
+  rx: ".5",
+  fill: "var(--tp)"
+}), /*#__PURE__*/React.createElement("rect", {
+  x: "12",
+  y: "37",
+  width: "20",
+  height: "3",
+  rx: "1.2",
+  fill: "var(--tp)"
+}), /*#__PURE__*/React.createElement("line", {
+  x1: "22",
+  y1: "17",
+  x2: "22",
+  y2: "31",
+  stroke: "var(--canvas)",
+  strokeWidth: "1.1",
+  strokeLinecap: "round"
+}), /*#__PURE__*/React.createElement("circle", {
+  cx: "22",
+  cy: "25",
+  r: "2.2",
+  fill: "var(--canvas)"
+}), /*#__PURE__*/React.createElement("circle", {
+  cx: "22",
+  cy: "25",
+  r: "1.1",
+  fill: "var(--ac)"
+}));
+
+/* ── ProgressRing ── */
+const Ring = ({
+  v = 0,
+  sz = 26,
+  sw = 2.5
+}) => {
+  const [d, sd] = useState(0);
+  const r = (sz - sw * 2) / 2,
+    c = 2 * Math.PI * r;
+  useEffect(() => {
+    const t = setTimeout(() => sd(v), 150);
+    return () => clearTimeout(t);
+  }, [v]);
+  return /*#__PURE__*/React.createElement("svg", {
+    width: sz,
+    height: sz,
+    viewBox: `0 0 ${sz} ${sz}`,
+    style: {
+      transform: "rotate(-90deg)"
+    }
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: sz / 2,
+    cy: sz / 2,
+    r: r,
+    fill: "none",
+    stroke: "var(--n100)",
+    strokeWidth: sw
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: sz / 2,
+    cy: sz / 2,
+    r: r,
+    fill: "none",
+    stroke: "var(--ac)",
+    strokeWidth: sw,
+    strokeLinecap: "round",
+    strokeDasharray: c,
+    strokeDashoffset: c - d / 100 * c,
+    style: {
+      transition: "stroke-dashoffset 800ms var(--esf)"
+    }
+  }));
+};
+
+/* ── Spinner ── */
+const Spinner = ({
+  sz = 20
+}) => /*#__PURE__*/React.createElement("svg", {
+  width: sz,
+  height: sz,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  className: "spin-anim"
+}, /*#__PURE__*/React.createElement("circle", {
+  cx: "12",
+  cy: "12",
+  r: "9",
+  stroke: "currentColor",
+  strokeWidth: "2.5",
+  opacity: ".2"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M21 12a9 9 0 00-9-9",
+  stroke: "currentColor",
+  strokeWidth: "2.5",
+  strokeLinecap: "round"
+}));
+
+/* ── Avatar ── */
+const Av = ({
+  name,
+  sz = 30
+}) => /*#__PURE__*/React.createElement("div", {
+  style: {
+    width: sz,
+    height: sz,
+    borderRadius: '50%',
+    background: 'var(--b50)',
+    border: '1.5px solid var(--b100)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: sz * .36,
+    fontWeight: 700,
+    color: 'var(--b700)',
+    flexShrink: 0,
+    userSelect: 'none',
+    fontFamily: 'var(--ff)'
+  }
+}, name?.[0] ?? '?');
+
+/* ── Skeleton ── */
+const Sk = ({
+  w = '100%',
+  h = 14,
+  r = 5
+}) => /*#__PURE__*/React.createElement("div", {
+  className: "shimmer",
+  style: {
+    width: w,
+    height: h,
+    borderRadius: r,
+    flexShrink: 0
+  }
+});
+
+/* ── Button ── */
+const Btn = ({
+  children,
+  variant = 'primary',
+  size = 'md',
+  icon: IC,
+  loading,
+  disabled,
+  onClick,
+  type = 'button',
+  fullWidth,
+  className = ''
+}) => {
+  const [hov, sh] = useState(false);
+  const [act, sa] = useState(false);
+  const h = {
+    sm: 30,
+    md: 38,
+    lg: 48
+  }[size];
+  const px = {
+    sm: 10,
+    md: 16,
+    lg: 20
+  }[size];
+  const fs = {
+    sm: 12,
+    md: 13,
+    lg: 15
+  }[size];
+  const ico = {
+    sm: 13,
+    md: 15,
+    lg: 17
+  }[size];
+  const r = {
+    sm: 7,
+    md: 9,
+    lg: 10
+  }[size];
+  const styles = {
+    primary: {
+      bg: act ? 'var(--n700)' : hov ? 'var(--n700)' : 'var(--n900)',
+      color: 'var(--ti)',
+      border: 'transparent',
+      shadow: hov ? 'var(--smh)' : 'var(--ssh)'
+    },
+    secondary: {
+      bg: act ? 'var(--n100)' : hov ? 'var(--n50)' : 'var(--sr)',
+      color: 'var(--tp)',
+      border: 'var(--bd)',
+      shadow: 'none'
+    },
+    ghost: {
+      bg: act ? 'var(--n100)' : hov ? 'var(--n50)' : 'transparent',
+      color: hov ? 'var(--tp)' : 'var(--tt)',
+      border: 'transparent',
+      shadow: 'none'
+    },
+    danger: {
+      bg: act ? 'var(--r50)' : hov ? 'var(--r50)' : 'transparent',
+      color: 'var(--r500)',
+      border: 'var(--r500)',
+      shadow: 'none'
+    },
+    brand: {
+      bg: act ? 'var(--b600)' : hov ? 'var(--b600)' : 'var(--b500)',
+      color: 'var(--ti)',
+      border: 'transparent',
+      shadow: hov ? 'var(--sbg)' : 'none'
+    },
+    outline: {
+      bg: act ? 'var(--n50)' : hov ? 'var(--n50)' : 'transparent',
+      color: 'var(--ts)',
+      border: 'var(--bd)',
+      shadow: 'none'
+    },
+    soft: {
+      bg: act ? 'var(--n200)' : hov ? 'var(--n200)' : 'var(--n100)',
+      color: 'var(--ts)',
+      border: 'transparent',
+      shadow: 'none'
+    }
+  };
+  const s = styles[variant] || styles.ghost;
+  const dis = disabled || loading;
+  return /*#__PURE__*/React.createElement("button", {
+    type: type,
+    onClick: onClick,
+    disabled: dis,
+    onMouseEnter: () => sh(true),
+    onMouseLeave: () => {
+      sh(false);
+      sa(false);
+    },
+    onMouseDown: () => sa(true),
+    onMouseUp: () => sa(false),
+    className: className,
+    style: {
+      height: h,
+      padding: `0 ${px}px`,
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      background: dis ? 'var(--n100)' : s.bg,
+      color: dis ? 'var(--n300)' : s.color,
+      border: `1px solid ${variant === 'secondary' || variant === 'danger' || variant === 'outline' ? s.border : 'transparent'}`,
+      borderRadius: r,
+      fontSize: fs,
+      fontWeight: 600,
+      fontFamily: 'var(--ff)',
+      boxShadow: s.shadow,
+      cursor: dis ? 'not-allowed' : 'pointer',
+      opacity: dis && !loading ? .6 : 1,
+      width: fullWidth ? '100%' : 'auto',
+      whiteSpace: 'nowrap',
+      userSelect: 'none',
+      transform: act && !dis ? 'scale(.97)' : 'scale(1)',
+      transition: 'all 150ms var(--esf)'
+    }
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, {
+    sz: ico
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, IC && /*#__PURE__*/React.createElement(IC, {
+    width: ico,
+    height: ico,
+    style: {
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("span", null, children)));
+};
+
+/* ── Input ── */
+const Input = ({
+  label,
+  hint,
+  error,
+  required,
+  size = 'md',
+  startAdornment,
+  endAdornment,
+  fullWidth = true,
+  id,
+  ...rest
+}) => {
+  const h = {
+    sm: 34,
+    md: 44,
+    lg: 56
+  }[size];
+  const fs = {
+    sm: 12,
+    md: 14,
+    lg: 17
+  }[size];
+  const iid = id || `in-${Math.random().toString(36).slice(2, 8)}`;
+  const [foc, sf] = useState(false);
+  const bc = error ? 'var(--r500)' : foc ? 'var(--n700)' : 'var(--bd)';
+  const sh = foc ? error ? '0 0 0 3px rgba(155,58,58,.12)' : '0 0 0 3px rgba(26,24,18,.07)' : 'none';
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: fullWidth ? '100%' : 'auto'
+    }
+  }, label && /*#__PURE__*/React.createElement("label", {
+    htmlFor: iid,
+    style: {
+      display: 'block',
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tt)',
+      marginBottom: 7
+    }
+  }, label, required && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--ac)',
+      marginInlineStart: 3
+    }
+  }, "*")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      height: h,
+      background: rest.disabled ? 'var(--surface)' : 'var(--sr)',
+      border: `1px solid ${bc}`,
+      borderRadius: 10,
+      padding: '0 12px',
+      gap: 8,
+      transition: 'border-color 150ms,box-shadow 150ms',
+      boxShadow: sh
+    }
+  }, startAdornment && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--tm)',
+      flexShrink: 0,
+      display: 'flex',
+      alignItems: 'center'
+    }
+  }, startAdornment), /*#__PURE__*/React.createElement("input", {
+    id: iid,
+    onFocus: () => sf(true),
+    onBlur: () => sf(false),
+    style: {
+      flex: 1,
+      background: 'transparent',
+      border: 'none',
+      outline: 'none',
+      fontSize: fs,
+      fontFamily: 'var(--ff)',
+      color: 'var(--tp)',
+      height: '100%',
+      minWidth: 0
+    },
+    ...rest
+  }), endAdornment && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--tm)',
+      flexShrink: 0,
+      display: 'flex',
+      alignItems: 'center'
+    }
+  }, endAdornment)), error ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 12,
+      color: 'var(--r500)'
+    }
+  }, error) : hint ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, hint) : null);
+};
+
+/* ── Textarea ── */
+const Textarea = ({
+  label,
+  hint,
+  error,
+  required,
+  rows = 4,
+  fullWidth = true,
+  id,
+  ...rest
+}) => {
+  const iid = id || `ta-${Math.random().toString(36).slice(2, 8)}`;
+  const [foc, sf] = useState(false);
+  const bc = error ? 'var(--r500)' : foc ? 'var(--n700)' : 'var(--bd)';
+  const sh = foc ? error ? '0 0 0 3px rgba(155,58,58,.12)' : '0 0 0 3px rgba(26,24,18,.07)' : 'none';
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: fullWidth ? '100%' : 'auto'
+    }
+  }, label && /*#__PURE__*/React.createElement("label", {
+    htmlFor: iid,
+    style: {
+      display: 'block',
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tt)',
+      marginBottom: 7
+    }
+  }, label, required && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--ac)',
+      marginInlineStart: 3
+    }
+  }, "*")), /*#__PURE__*/React.createElement("textarea", {
+    id: iid,
+    rows: rows,
+    onFocus: () => sf(true),
+    onBlur: () => sf(false),
+    style: {
+      width: '100%',
+      padding: '11px 13px',
+      background: rest.disabled ? 'var(--surface)' : 'var(--sr)',
+      border: `1px solid ${bc}`,
+      borderRadius: 10,
+      fontSize: 14,
+      lineHeight: '24px',
+      fontFamily: 'var(--ff)',
+      color: 'var(--tp)',
+      resize: 'vertical',
+      outline: 'none',
+      boxShadow: sh,
+      transition: 'border-color 150ms,box-shadow 150ms'
+    },
+    ...rest
+  }), error ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 12,
+      color: 'var(--r500)'
+    }
+  }, error) : hint ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, hint) : null);
+};
+
+/* ── Field wrapper ── */
+const Field = ({
+  label,
+  hint,
+  children,
+  required
+}) => /*#__PURE__*/React.createElement("div", null, label && /*#__PURE__*/React.createElement("label", {
+  style: {
+    display: 'block',
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--tt)',
+    marginBottom: 7
+  }
+}, label, required && /*#__PURE__*/React.createElement("span", {
+  style: {
+    color: 'var(--ac)',
+    marginInlineStart: 3
+  }
+}, "*")), children, hint && /*#__PURE__*/React.createElement("p", {
+  style: {
+    marginTop: 5,
+    fontSize: 12,
+    color: 'var(--tm)'
+  }
+}, hint));
+
+/* ── Card ── */
+const Card = ({
+  children,
+  className = '',
+  onClick,
+  variant = 'default',
+  style = {}
+}) => {
+  const [hov, sh] = useState(false);
+  const isInt = !!onClick;
+  const variants = {
+    default: {
+      bg: 'var(--sr)',
+      border: '1px solid var(--bd)',
+      sh: 'none'
+    },
+    flat: {
+      bg: 'var(--surface)',
+      border: 'none',
+      sh: 'none'
+    },
+    feature: {
+      bg: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      sh: 'none'
+    }
+  };
+  const v = variants[variant] || variants.default;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClick,
+    onMouseEnter: () => isInt && sh(true),
+    onMouseLeave: () => isInt && sh(false),
+    className: className,
+    style: {
+      background: v.bg,
+      border: v.border,
+      borderRadius: 13,
+      boxShadow: isInt && hov ? 'var(--smh)' : v.sh,
+      cursor: isInt ? 'pointer' : 'default',
+      transform: isInt && hov ? 'translateY(-2px)' : 'translateY(0)',
+      transition: 'all 200ms var(--esf)',
+      ...style
+    }
+  }, children);
+};
+
+/* ── Badge ── */
+const Badge = ({
+  children,
+  variant = 'neutral',
+  dot
+}) => {
+  const vs = {
+    neutral: {
+      bg: 'var(--n100)',
+      c: 'var(--ts)',
+      dot: 'var(--n400)'
+    },
+    brand: {
+      bg: 'var(--b50)',
+      c: 'var(--b700)',
+      dot: 'var(--ac)'
+    },
+    success: {
+      bg: 'var(--g50)',
+      c: 'var(--g500)',
+      dot: 'var(--g500)'
+    },
+    warning: {
+      bg: 'var(--w50)',
+      c: 'var(--w500)',
+      dot: 'var(--w500)'
+    },
+    danger: {
+      bg: 'var(--r50)',
+      c: 'var(--r500)',
+      dot: 'var(--r500)'
+    }
+  };
+  const v = vs[variant] || vs.neutral;
+  return /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      height: 22,
+      padding: '0 9px',
+      background: v.bg,
+      color: v.c,
+      fontSize: 11,
+      fontWeight: 600,
+      fontFamily: 'var(--ff)',
+      borderRadius: 9999,
+      whiteSpace: 'nowrap',
+      lineHeight: 1
+    }
+  }, dot && /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 6,
+      height: 6,
+      borderRadius: '50%',
+      background: v.dot,
+      flexShrink: 0
+    }
+  }), children);
+};
+
+/* ── Modal ── */
+const Modal = ({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  size = 'md'
+}) => {
+  const sizes = {
+    sm: 400,
+    md: 560,
+    lg: 720
+  };
+  useEffect(() => {
+    if (!open) return;
+    const h = e => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    document.addEventListener('keydown', h);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', h);
+      document.body.style.overflow = '';
+    };
+  }, [open, onClose]);
+  if (!open) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    role: "dialog",
+    "aria-modal": "true",
+    style: {
+      position: 'fixed',
+      inset: 0,
+      zIndex: 60,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: () => onClose?.(),
+    style: {
+      position: 'absolute',
+      inset: 0,
+      background: 'rgba(26,24,18,.42)',
+      backdropFilter: 'blur(8px)',
+      animation: 'fadeu 200ms var(--esf)'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'relative',
+      width: '100%',
+      maxWidth: sizes[size],
+      maxHeight: 'calc(100vh - 32px)',
+      background: 'var(--sr)',
+      borderRadius: 20,
+      boxShadow: 'var(--slh)',
+      display: 'flex',
+      flexDirection: 'column',
+      animation: 'modal-in 220ms var(--esf)'
+    }
+  }, (title || onClose) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      padding: '22px 22px 0'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, title && /*#__PURE__*/React.createElement("h2", {
+    style: {
+      margin: 0,
+      fontSize: 20,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      lineHeight: '28px'
+    }
+  }, title), description && /*#__PURE__*/React.createElement("p", {
+    style: {
+      margin: '5px 0 0',
+      fontSize: 14,
+      color: 'var(--tt)'
+    }
+  }, description)), onClose && /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      width: 32,
+      height: 32,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'none',
+      borderRadius: 7,
+      color: 'var(--tm)',
+      transition: 'background 150ms'
+    },
+    onMouseEnter: e => e.currentTarget.style.background = 'var(--surface)',
+    onMouseLeave: e => e.currentTarget.style.background = 'none'
+  }, /*#__PURE__*/React.createElement(I.X, {
+    width: 15,
+    height: 15
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 22,
+      overflowY: 'auto',
+      flex: 1
+    }
+  }, children), footer && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '0 22px 22px',
+      display: 'flex',
+      justifyContent: 'flex-start',
+      gap: 8
+    }
+  }, footer)));
+};
+
+/* ── Toast ── */
+const Toast = ({
+  msg,
+  type = 'neutral',
+  onD
+}) => {
+  const vs = {
+    neutral: {
+      bg: 'var(--n900)',
+      c: 'var(--ti)'
+    },
+    success: {
+      bg: 'var(--g500)',
+      c: '#fff'
+    },
+    danger: {
+      bg: 'var(--r500)',
+      c: '#fff'
+    },
+    warning: {
+      bg: 'var(--w500)',
+      c: '#fff'
+    }
+  };
+  const v = vs[type] || vs.neutral;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'fixed',
+      top: 20,
+      insetInlineEnd: 20,
+      zIndex: 99,
+      background: v.bg,
+      color: v.c,
+      padding: '10px 15px',
+      borderRadius: 9,
+      fontSize: 13,
+      fontWeight: 500,
+      fontFamily: 'var(--ff)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      boxShadow: 'var(--slh)',
+      animation: 'toast-in 200ms var(--esf)'
+    }
+  }, msg, /*#__PURE__*/React.createElement("button", {
+    onClick: onD,
+    style: {
+      background: 'none',
+      color: 'inherit',
+      opacity: .6,
+      fontSize: 17,
+      lineHeight: 1,
+      cursor: 'pointer'
+    }
+  }, "×"));
+};
+
+/* ── Empty State ── */
+const EmptyState = ({
+  icon: IC,
+  title,
+  description,
+  action
+}) => /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    padding: '56px 24px',
+    maxWidth: 440,
+    margin: '0 auto'
+  }
+}, IC && /*#__PURE__*/React.createElement("div", {
+  style: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    background: 'var(--b50)',
+    border: '1px solid var(--b100)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20
+  }
+}, /*#__PURE__*/React.createElement(IC, {
+  width: 32,
+  height: 32,
+  style: {
+    color: 'var(--ac)'
+  }
+})), /*#__PURE__*/React.createElement("h3", {
+  style: {
+    margin: 0,
+    fontSize: 22,
+    fontWeight: 600,
+    color: 'var(--tp)',
+    lineHeight: '30px',
+    marginBottom: 8
+  }
+}, title), description && /*#__PURE__*/React.createElement("p", {
+  style: {
+    margin: '0 0 24px',
+    fontSize: 14,
+    color: 'var(--tt)',
+    lineHeight: '22px'
+  }
+}, description), action);
+
+/* ── Section header ── */
+const SH = ({
+  title,
+  action,
+  onAction,
+  spacing = 40
+}) => /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginTop: spacing,
+    marginBottom: 14
+  }
+}, /*#__PURE__*/React.createElement("h2", {
+  style: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 600,
+    color: 'var(--tp)',
+    letterSpacing: '-.005em'
+  }
+}, title), action && /*#__PURE__*/React.createElement("button", {
+  onClick: onAction,
+  style: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--b700)',
+    background: 'none',
+    cursor: 'pointer',
+    transition: 'color 150ms'
+  },
+  onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+  onMouseLeave: e => e.currentTarget.style.color = 'var(--b700)'
+}, action));
+
+/* ── Upload file slot (letters for voice creation) ── */
+const LetterSlot = ({
+  letter,
+  onChange,
+  onRemove,
+  index
+}) => {
+  const fileRef = useRef();
+  const [loading, sl] = useState(false);
+  const handleFile = async e => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    sl(true);
+    try {
+      let text = f.name.toLowerCase().endsWith('.docx') ? await readDocxFile(f) : await f.text();
+      onChange({
+        ...letter,
+        content: text,
+        title: letter.title || f.name.replace(/\.[^.]+$/, '')
+      });
+    } catch (err) {
+      alert('فشل قراءة الملف: ' + err.message);
+    } finally {
+      sl(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      fontSize: 13,
+      color: 'var(--tt)'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 22,
+      height: 22,
+      borderRadius: '50%',
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: 11,
+      fontWeight: 700,
+      color: 'var(--b700)',
+      flexShrink: 0
+    }
+  }, index + 1), "الخطاب ", index + 1), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: fileRef,
+    type: "file",
+    accept: ".docx,.txt,.md",
+    onChange: handleFile,
+    style: {
+      display: 'none'
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    variant: "soft",
+    size: "sm",
+    icon: I.Upload,
+    onClick: () => fileRef.current?.click(),
+    loading: loading,
+    disabled: loading
+  }, "رفع ملف"), onRemove && /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    size: "sm",
+    icon: I.Trash,
+    onClick: onRemove
+  }))), /*#__PURE__*/React.createElement(Input, {
+    placeholder: "عنوان مختصر (اختياري)",
+    value: letter.title || '',
+    onChange: e => onChange({
+      ...letter,
+      title: e.target.value
+    }),
+    style: {
+      marginBottom: 8
+    }
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    rows: 5,
+    placeholder: "ألصق نص الخطاب أو ارفع ملف Word...",
+    value: letter.content || '',
+    onChange: e => onChange({
+      ...letter,
+      content: e.target.value
+    })
+  }), letter.content && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 6,
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, letter.content.length, " حرف · ", letter.content.split(/\s+/).filter(Boolean).length, " كلمة"));
+};
+
+/* ── Reference slot ── */
+const RefSlot = ({
+  reference,
+  onChange,
+  onRemove
+}) => {
+  const fileRef = useRef();
+  const [loading, sl] = useState(false);
+  const [err, se] = useState('');
+  const handleFile = async e => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    sl(true);
+    se('');
+    try {
+      const text = await readAnyFile(f);
+      onChange({
+        ...reference,
+        content: text,
+        name: reference.name || f.name.replace(/\.[^.]+$/, '')
+      });
+    } catch (e2) {
+      se(e2.message);
+    } finally {
+      sl(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tt)'
+    }
+  }, "مرجع تحريري"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: fileRef,
+    type: "file",
+    accept: ".pdf,.docx,.txt,.md",
+    onChange: handleFile,
+    style: {
+      display: 'none'
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    variant: "soft",
+    size: "sm",
+    icon: I.Upload,
+    onClick: () => fileRef.current?.click(),
+    loading: loading
+  }, "رفع دليل (PDF/Word)"), onRemove && /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    size: "sm",
+    icon: I.Trash,
+    onClick: onRemove
+  }))), /*#__PURE__*/React.createElement(Input, {
+    placeholder: "اسم الدليل (مثل: دليل التحرير الإداري)",
+    value: reference.name || '',
+    onChange: e => onChange({
+      ...reference,
+      name: e.target.value
+    }),
+    style: {
+      marginBottom: 8
+    }
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    rows: 4,
+    placeholder: "أو ألصق نص الدليل مباشرة...",
+    value: reference.content || '',
+    onChange: e => onChange({
+      ...reference,
+      content: e.target.value
+    })
+  }), err && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 12,
+      color: 'var(--r500)'
+    }
+  }, err), reference.content && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, reference.content.length, " حرف"));
+};
+
+/* ── Supporting doc slot ── */
+const DocSlot = ({
+  doc,
+  onChange,
+  onRemove,
+  index
+}) => {
+  const fileRef = useRef();
+  const [loading, sl] = useState(false);
+  const handleFile = async e => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    sl(true);
+    try {
+      const text = await readAnyFile(f);
+      onChange({
+        ...doc,
+        content: text,
+        name: doc.name || f.name.replace(/\.[^.]+$/, '')
+      });
+    } catch (e2) {
+      alert('فشل قراءة الملف: ' + e2.message);
+    } finally {
+      sl(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tt)'
+    }
+  }, "مستند ", index + 1), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: fileRef,
+    type: "file",
+    accept: ".pdf,.docx,.txt,.md",
+    onChange: handleFile,
+    style: {
+      display: 'none'
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    variant: "soft",
+    size: "sm",
+    icon: I.Upload,
+    onClick: () => fileRef.current?.click(),
+    loading: loading
+  }, "رفع ملف"), onRemove && /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    size: "sm",
+    icon: I.Trash,
+    onClick: onRemove
+  }))), /*#__PURE__*/React.createElement(Input, {
+    placeholder: "اسم المستند",
+    value: doc.name || '',
+    onChange: e => onChange({
+      ...doc,
+      name: e.target.value
+    }),
+    style: {
+      marginBottom: 8
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'block',
+      fontSize: 12,
+      color: 'var(--tt)',
+      marginBottom: 5
+    }
+  }, "طريقة الاستخدام"), /*#__PURE__*/React.createElement("select", {
+    value: doc.purpose || '',
+    onChange: e => onChange({
+      ...doc,
+      purpose: e.target.value
+    }),
+    style: {
+      width: '100%',
+      height: 38,
+      padding: '0 10px',
+      background: 'var(--sr)',
+      border: '1px solid var(--bd)',
+      borderRadius: 9,
+      fontSize: 13,
+      fontFamily: 'var(--ff)',
+      color: 'var(--tp)',
+      outline: 'none'
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— اختر طريقة الاستخدام —"), DOC_PURPOSES.map(p => /*#__PURE__*/React.createElement("option", {
+    key: p,
+    value: p
+  }, p)))), /*#__PURE__*/React.createElement(Textarea, {
+    rows: 4,
+    placeholder: "أو ألصق المحتوى مباشرة...",
+    value: doc.content || '',
+    onChange: e => onChange({
+      ...doc,
+      content: e.target.value
+    })
+  }), doc.content && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, doc.content.length, " حرف"));
+};
+
+/* ══════════════════════════════════════════════════
+   LAYOUT: HEADER + SIDEBAR
+   ══════════════════════════════════════════════════ */
+const NAV = [{
+  id: 'home',
+  label: 'لوحة التحكم',
+  ic: I.Home
+}, {
+  id: 'voices',
+  label: 'مكتبة ملفاتي',
+  ic: I.Voice
+}, {
+  id: 'history',
+  label: 'الخطابات',
+  ic: I.Mail
+}, {
+  id: 'templates',
+  label: 'القوالب',
+  ic: I.Tmpl
+}];
+const Header = ({
+  onNav,
+  current,
+  sidebarCollapsed,
+  onToggleSidebar,
+  onNew,
+  profileCount,
+  historyCount
+}) => {
+  const [scrolled, ss] = useState(false);
+  useEffect(() => {
+    const h = () => ss(window.scrollY > 8);
+    window.addEventListener('scroll', h);
+    return () => window.removeEventListener('scroll', h);
+  }, []);
+  return /*#__PURE__*/React.createElement("header", {
+    style: {
+      position: 'sticky',
+      top: 0,
+      zIndex: 50,
+      height: 60,
+      background: scrolled ? 'rgba(252,252,251,.92)' : 'var(--canvas)',
+      backdropFilter: scrolled ? 'blur(12px) saturate(1.1)' : 'none',
+      borderBottom: '1px solid var(--bs)',
+      display: 'flex',
+      alignItems: 'center',
+      padding: '0 20px',
+      gap: 14,
+      boxShadow: scrolled ? 'var(--ssh)' : 'none',
+      transition: 'background 200ms,box-shadow 200ms'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onToggleSidebar,
+    style: {
+      width: 30,
+      height: 30,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'none',
+      borderRadius: 6,
+      color: 'var(--tm)'
+    },
+    onMouseEnter: e => {
+      e.currentTarget.style.background = 'var(--surface)';
+      e.currentTarget.style.color = 'var(--tp)';
+    },
+    onMouseLeave: e => {
+      e.currentTarget.style.background = 'none';
+      e.currentTarget.style.color = 'var(--tm)';
+    }
+  }, /*#__PURE__*/React.createElement(I.Collapse, {
+    width: 15,
+    height: 15
+  })), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('home'),
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 9,
+      background: 'none',
+      padding: '3px 0'
+    }
+  }, /*#__PURE__*/React.createElement(Logo, null), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'right'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: 'var(--fd)',
+      fontSize: 17,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      lineHeight: 1.1
+    }
+  }, "فصيح"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: 'var(--tm)',
+      textTransform: 'uppercase',
+      letterSpacing: '.1em',
+      lineHeight: 1.4
+    }
+  }, "FASIH"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Plus,
+    onClick: onNew
+  }, "خطاب جديد"), /*#__PURE__*/React.createElement(Av, {
+    name: "م",
+    sz: 30
+  }));
+};
+const Sidebar = ({
+  current,
+  onNav,
+  collapsed,
+  profileCount,
+  onUpgrade
+}) => {
+  const w = collapsed ? 54 : 228;
+  return /*#__PURE__*/React.createElement("aside", {
+    style: {
+      width: w,
+      minWidth: w,
+      height: 'calc(100vh - 60px)',
+      position: 'sticky',
+      top: 60,
+      background: 'var(--canvas)',
+      borderInlineStart: '1px solid var(--bs)',
+      padding: '14px 7px 18px',
+      display: 'flex',
+      flexDirection: 'column',
+      transition: 'width 270ms var(--esf),min-width 270ms var(--esf)',
+      overflow: 'hidden',
+      zIndex: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 1,
+      flex: 1
+    }
+  }, NAV.map(n => {
+    const act = n.id === current || n.id === 'voices' && current === 'profile' || n.id === 'voices' && current === 'create' || n.id === 'history' && current === 'result';
+    return /*#__PURE__*/React.createElement("button", {
+      key: n.id,
+      onClick: () => onNav(n.id),
+      title: collapsed ? n.label : undefined,
+      style: {
+        position: 'relative',
+        width: '100%',
+        height: 34,
+        display: 'flex',
+        alignItems: 'center',
+        gap: collapsed ? 0 : 9,
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        padding: collapsed ? '0' : '0 9px',
+        background: act ? 'var(--surface)' : 'transparent',
+        border: 'none',
+        borderRadius: 7,
+        fontSize: 13,
+        fontWeight: act ? 600 : 500,
+        color: act ? 'var(--tp)' : 'var(--tt)',
+        transition: 'background 100ms,color 100ms',
+        cursor: 'pointer'
+      },
+      onMouseEnter: e => !act && (e.currentTarget.style.background = 'var(--surface)'),
+      onMouseLeave: e => !act && (e.currentTarget.style.background = 'transparent')
+    }, act && /*#__PURE__*/React.createElement("span", {
+      style: {
+        position: 'absolute',
+        insetInlineEnd: 3,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: 2,
+        height: 15,
+        background: 'var(--ac)',
+        borderRadius: 1
+      }
+    }), /*#__PURE__*/React.createElement(n.ic, {
+      width: 17,
+      height: 17,
+      style: {
+        color: act ? 'var(--ac)' : 'inherit',
+        flexShrink: 0
+      }
+    }), !collapsed && /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }, n.label));
+  })), !collapsed && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: '0 3px 10px',
+      padding: 13,
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      borderRadius: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 5
+    }
+  }, /*#__PURE__*/React.createElement(I.Sparkle, {
+    width: 12,
+    height: 12,
+    style: {
+      color: 'var(--ac)'
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "ترقية إلى Pro")), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tt)',
+      lineHeight: 1.5,
+      marginBottom: 8
+    }
+  }, "خطابات غير محدودة + قوالب + أدلة"), /*#__PURE__*/React.createElement("button", {
+    onClick: onUpgrade,
+    style: {
+      width: '100%',
+      height: 26,
+      background: 'var(--n900)',
+      color: 'var(--ti)',
+      borderRadius: 6,
+      fontSize: 11,
+      fontWeight: 600,
+      fontFamily: 'var(--ff)',
+      cursor: 'pointer',
+      border: 'none'
+    }
+  }, "اطلع على المزايا ←"))));
+};
+
+/* ══════════════════════════════════════════════════
+   DASHBOARD VIEW
+   ══════════════════════════════════════════════════ */
+const useCount = (t, d = 700) => {
+  const [v, sv] = useState(0);
+  useEffect(() => {
+    let r;
+    const t0 = performance.now();
+    const go = n => {
+      const p = Math.min((n - t0) / d, 1),
+        e = 1 - Math.pow(1 - p, 3);
+      sv(Math.round(e * t * 10) / 10);
+      if (p < 1) r = requestAnimationFrame(go);
+    };
+    r = requestAnimationFrame(go);
+    return () => cancelAnimationFrame(r);
+  }, [t]);
+  return v;
+};
+const DashboardView = ({
+  profiles,
+  history,
+  templates,
+  onNav,
+  onSelectProfile
+}) => {
+  const weekLetters = history.filter(l => Date.now() - l.generatedAt < 7 * 24 * 3600 * 1000).length;
+  const wk = useCount(weekLetters, 600);
+  const draft = null; // future: drafts feature
+  const recentLetters = history.slice(0, 5);
+  const activeProfile = profiles[0];
+  const h = new Date().getHours();
+  const gr = h < 12 ? 'صباح الخير' : h < 17 ? 'مساء الخير' : 'مساء الخير';
+  if (profiles.length === 0) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        paddingTop: 72
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "fu",
+      style: {
+        width: 84,
+        height: 84,
+        borderRadius: 20,
+        background: 'var(--b50)',
+        border: '1px solid var(--b100)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 24
+      }
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "40",
+      height: "48",
+      viewBox: "0 0 44 50",
+      fill: "none"
+    }, /*#__PURE__*/React.createElement("g", {
+      stroke: "var(--ac)",
+      strokeWidth: "1.6",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("line", {
+      x1: "22",
+      y1: "4",
+      x2: "22",
+      y2: "9"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "13",
+      y1: "7",
+      x2: "15.5",
+      y2: "10.5"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "31",
+      y1: "7",
+      x2: "28.5",
+      y2: "10.5"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "7.5",
+      y1: "12.5",
+      x2: "10.5",
+      y2: "14.5"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "36.5",
+      y1: "12.5",
+      x2: "33.5",
+      y2: "14.5"
+    })), /*#__PURE__*/React.createElement("path", {
+      d: "M22 13 L31 29 L22 34 L13 29 Z",
+      fill: "var(--b700)"
+    }), /*#__PURE__*/React.createElement("rect", {
+      x: "20",
+      y: "34",
+      width: "4",
+      height: "3.5",
+      rx: ".5",
+      fill: "var(--b700)"
+    }), /*#__PURE__*/React.createElement("rect", {
+      x: "12",
+      y: "38",
+      width: "20",
+      height: "3",
+      rx: "1.2",
+      fill: "var(--b700)"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "22",
+      y1: "18",
+      x2: "22",
+      y2: "32",
+      stroke: "var(--b50)",
+      strokeWidth: "1",
+      strokeLinecap: "round"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "22",
+      cy: "26",
+      r: "2",
+      fill: "var(--b50)"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "22",
+      cy: "26",
+      r: "1",
+      fill: "var(--b200)"
+    }))), /*#__PURE__*/React.createElement("h1", {
+      className: "fu fd",
+      style: {
+        fontSize: 36,
+        fontWeight: 700,
+        color: 'var(--tp)',
+        letterSpacing: '-.015em',
+        lineHeight: 1.2,
+        marginBottom: 10,
+        animationDelay: '50ms'
+      }
+    }, "أهلاً بك في فصيح"), /*#__PURE__*/React.createElement("p", {
+      className: "fu",
+      style: {
+        fontSize: 15,
+        color: 'var(--tt)',
+        lineHeight: 1.7,
+        maxWidth: 420,
+        marginBottom: 28,
+        animationDelay: '110ms'
+      }
+    }, "علّمه أسلوبك في الكتابة الرسمية مرة واحدة،", /*#__PURE__*/React.createElement("br", null), "وسيصيغ لك خطابات بنفس صوتك."), /*#__PURE__*/React.createElement("div", {
+      className: "fu",
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 10,
+        animationDelay: '170ms'
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      icon: I.Plus,
+      size: "lg",
+      onClick: () => onNav('create')
+    }, "ابدأ بإنشاء أول ملف أسلوبي ←"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: 'var(--tm)'
+      }
+    }, "يستغرق الإعداد دقيقتين فقط")), /*#__PURE__*/React.createElement("div", {
+      className: "fu",
+      style: {
+        marginTop: 56,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3,1fr)',
+        gap: 14,
+        maxWidth: 580,
+        opacity: .75,
+        animationDelay: '260ms'
+      }
+    }, [['01', 'أضف خطاباتك', 'ارفع ٣ نماذج من خطاباتك السابقة'], ['02', 'تدريب الذكاء', 'يتعلّم بصمتك الأسلوبية'], ['03', 'أنشئ خطاباتك', 'رسمية كاملة بصوتك']].map(([n, t, d]) => /*#__PURE__*/React.createElement("div", {
+      key: n,
+      style: {
+        background: 'var(--sr)',
+        border: '1px solid var(--bd)',
+        borderRadius: 11,
+        padding: '15px 13px',
+        textAlign: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontFamily: 'var(--fm)',
+        color: 'var(--ac)',
+        fontWeight: 600,
+        marginBottom: 7
+      }
+    }, n), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 600,
+        color: 'var(--tp)',
+        marginBottom: 3
+      }
+    }, t), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: 'var(--tm)',
+        lineHeight: 1.6
+      }
+    }, d)))));
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column'
+    }
+  }, /*#__PURE__*/React.createElement("section", {
+    className: "fu",
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
+    style: {
+      margin: 0,
+      fontSize: 30,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      letterSpacing: '-.015em',
+      lineHeight: 1.2
+    }
+  }, gr), /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 6,
+      fontSize: 12,
+      color: 'var(--tt)'
+    }
+  }, weekLetters > 0 ? `${weekLetters} خطاب هذا الأسبوع · ` : '', profiles.length, " ملف أسلوبي · ", history.length, " خطاب في السجل")), /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Pen,
+    onClick: () => onNav('generate'),
+    variant: "primary"
+  }, "توليد خطاب")), /*#__PURE__*/React.createElement("div", {
+    className: "fu",
+    style: {
+      marginTop: 28,
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3,1fr)',
+      gap: 13,
+      animationDelay: '60ms'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--surface)',
+      borderRadius: 13,
+      padding: '20px 20px 16px',
+      height: 110,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 600,
+      color: 'var(--tm)',
+      textTransform: 'uppercase',
+      letterSpacing: '.04em'
+    }
+  }, "هذا الأسبوع"), /*#__PURE__*/React.createElement(I.Chart, {
+    width: 13,
+    height: 13,
+    style: {
+      color: 'var(--n300)'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'baseline',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "tnum",
+    style: {
+      fontSize: 32,
+      fontWeight: 700,
+      fontFamily: 'var(--fm)',
+      color: 'var(--tp)',
+      lineHeight: 1
+    }
+  }, Math.round(wk)), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, "خطاب")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: 'var(--g500)'
+    }
+  }, history.length > 0 ? `↑ من أصل ${history.length} خطاب` : 'لا توجد خطابات بعد')), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--surface)',
+      borderRadius: 13,
+      padding: '20px 20px 16px',
+      height: 110,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      cursor: 'pointer',
+      transition: 'background 150ms'
+    },
+    onClick: () => activeProfile && onSelectProfile(activeProfile),
+    onMouseEnter: e => e.currentTarget.style.background = 'var(--n100)',
+    onMouseLeave: e => e.currentTarget.style.background = 'var(--surface)'
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 600,
+      color: 'var(--tm)',
+      textTransform: 'uppercase',
+      letterSpacing: '.04em'
+    }
+  }, "الملف النشط"), /*#__PURE__*/React.createElement(Ring, {
+    v: Math.min(100, activeProfile?.letters?.length * 25 || 0),
+    sz: 24,
+    sw: 2.5
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, activeProfile?.name || '—'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, activeProfile?.letters?.length || 0, " خطاب تدريب · ", profiles.length, " ملف")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--surface)',
+      borderRadius: 13,
+      padding: '20px 20px 16px',
+      height: 110,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 600,
+      color: 'var(--tm)',
+      textTransform: 'uppercase',
+      letterSpacing: '.04em'
+    }
+  }, "القوالب"), /*#__PURE__*/React.createElement(I.Tmpl, {
+    width: 13,
+    height: 13,
+    style: {
+      color: 'var(--n300)'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'baseline',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "tnum",
+    style: {
+      fontSize: 32,
+      fontWeight: 700,
+      fontFamily: 'var(--fm)',
+      color: 'var(--tp)',
+      lineHeight: 1
+    }
+  }, templates.length), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, "قالب")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, templates.length === 0 ? 'لا توجد قوالب بعد' : 'قوالب الهوية البصرية'))), /*#__PURE__*/React.createElement(SH, {
+    title: "إجراءات سريعة",
+    spacing: 36
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4,1fr)',
+      gap: 11
+    },
+    className: "fu"
+  }, [{
+    ic: I.Plus,
+    label: 'خطاب جديد',
+    sub: 'من الصفر',
+    pr: true,
+    act: 'generate'
+  }, {
+    ic: I.Reply,
+    label: 'رد على خطاب',
+    sub: 'ارفع وارداً',
+    pr: false,
+    act: 'generate'
+  }, {
+    ic: I.Voice,
+    label: 'ملف جديد',
+    sub: 'تدريب صوت',
+    pr: false,
+    act: 'create'
+  }, {
+    ic: I.Zap,
+    label: 'القوالب',
+    sub: 'هوية بصرية',
+    pr: false,
+    act: 'templates'
+  }].map(({
+    ic: IC,
+    label,
+    sub,
+    pr,
+    act
+  }) => {
+    const [h, sh] = useState(false);
+    return /*#__PURE__*/React.createElement("button", {
+      key: label,
+      onClick: () => onNav(act),
+      onMouseEnter: () => sh(true),
+      onMouseLeave: () => sh(false),
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        padding: 16,
+        height: 120,
+        background: h ? pr ? 'var(--b50)' : 'var(--n50)' : pr ? 'var(--b50)' : 'var(--sr)',
+        border: `1px solid ${h ? pr ? 'var(--b200)' : 'var(--n300)' : pr ? 'var(--b100)' : 'var(--bd)'}`,
+        borderRadius: 11,
+        cursor: 'pointer',
+        textAlign: 'start',
+        transform: h ? 'translateY(-2px)' : 'none',
+        boxShadow: h && pr ? 'var(--sbg)' : h ? 'var(--ssh)' : 'none',
+        transition: 'all 170ms var(--esf)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 38,
+        height: 38,
+        borderRadius: 8,
+        background: h ? pr ? 'var(--b200)' : 'var(--n200)' : pr ? 'var(--b100)' : 'var(--n100)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'background 150ms,transform 170ms var(--esp)',
+        transform: h ? 'scale(1.08)' : 'none'
+      }
+    }, /*#__PURE__*/React.createElement(IC, {
+      width: 18,
+      height: 18,
+      style: {
+        color: pr ? 'var(--b700)' : 'var(--tt)'
+      }
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 500,
+        color: 'var(--tp)',
+        marginBottom: 3
+      }
+    }, label), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: 'var(--tm)'
+      }
+    }, sub)));
+  })), recentLetters.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SH, {
+    title: "آخر الخطابات",
+    action: "عرض الكل ←",
+    onAction: () => onNav('history'),
+    spacing: 36
+  }), /*#__PURE__*/React.createElement(Card, {
+    className: "fu",
+    style: {
+      overflow: 'hidden'
+    }
+  }, recentLetters.map((l, i) => {
+    const [h, sh] = useState(false);
+    return /*#__PURE__*/React.createElement("div", {
+      key: l.id,
+      onClick: () => {},
+      onMouseEnter: () => sh(true),
+      onMouseLeave: () => sh(false),
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        height: 58,
+        padding: '0 16px',
+        background: h ? 'var(--surface)' : 'transparent',
+        borderBottom: i < recentLetters.length - 1 ? '1px solid var(--bs)' : 'none',
+        cursor: 'pointer',
+        transition: 'background 100ms'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        background: 'var(--ac)',
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 500,
+        color: 'var(--tp)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        marginBottom: 2
+      }
+    }, l.subject || 'خطاب'), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: 'var(--tm)'
+      }
+    }, "إلى: ", l.recipient, " · ", l.profileName)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: 'var(--tm)'
+      }
+    }, formatDate(l.generatedAt)), /*#__PURE__*/React.createElement(I.ChL, {
+      width: 12,
+      height: 12,
+      style: {
+        color: 'var(--n300)',
+        transition: 'color 150ms',
+        color: h ? 'var(--tt)' : 'var(--n300)'
+      }
+    }));
+  }))));
+};
+
+/* ══════════════════════════════════════════════════
+   VOICES (Profiles) VIEWS
+   ══════════════════════════════════════════════════ */
+const VoicesView = ({
+  profiles,
+  onNav,
+  onSelect,
+  onDelete
+}) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 28
+  }
+}, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
+  className: "fd",
+  style: {
+    fontSize: 32,
+    fontWeight: 700,
+    color: 'var(--tp)',
+    margin: 0,
+    letterSpacing: '-.015em'
+  }
+}, "مكتبة ملفاتي"), /*#__PURE__*/React.createElement("p", {
+  style: {
+    margin: '6px 0 0',
+    fontSize: 14,
+    color: 'var(--tt)'
+  }
+}, "ملفاتك الأسلوبية — كل ملف يحتوي على بصمتك في نوع مختلف من الخطابات.")), /*#__PURE__*/React.createElement(Btn, {
+  icon: I.Plus,
+  onClick: () => onNav('create')
+}, "إنشاء ملف جديد")), profiles.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+  style: {
+    padding: 0
+  }
+}, /*#__PURE__*/React.createElement(EmptyState, {
+  icon: I.Voice,
+  title: "لا توجد ملفات أسلوبية بعد",
+  description: "أنشئ ملفاً بإضافة عيّنات من خطاباتك السابقة.",
+  action: /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Plus,
+    onClick: () => onNav('create')
+  }, "إنشاء أول ملف")
+})) : /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))',
+    gap: 14
+  }
+}, profiles.map(p => /*#__PURE__*/React.createElement(ProfileCard, {
+  key: p.id,
+  profile: p,
+  onSelect: () => onSelect(p),
+  onDelete: () => {
+    if (confirm(`حذف "${p.name}"؟`)) onDelete(p.id);
+  }
+})), /*#__PURE__*/React.createElement("button", {
+  onClick: () => onNav('create'),
+  style: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    padding: 24,
+    background: 'transparent',
+    border: '1.5px dashed var(--n300)',
+    borderRadius: 13,
+    cursor: 'pointer',
+    color: 'var(--tt)',
+    transition: 'all 170ms var(--esf)',
+    minHeight: 160,
+    fontFamily: 'var(--ff)'
+  },
+  onMouseEnter: e => {
+    e.currentTarget.style.borderColor = 'var(--ac)';
+    e.currentTarget.style.color = 'var(--b700)';
+    e.currentTarget.style.background = 'var(--b50)';
+  },
+  onMouseLeave: e => {
+    e.currentTarget.style.borderColor = 'var(--n300)';
+    e.currentTarget.style.color = 'var(--tt)';
+    e.currentTarget.style.background = 'transparent';
+  }
+}, /*#__PURE__*/React.createElement(I.Plus, {
+  width: 28,
+  height: 28
+}), /*#__PURE__*/React.createElement("span", {
+  style: {
+    fontSize: 14,
+    fontWeight: 500
+  }
+}, "إضافة ملف جديد"))));
+const ProfileCard = ({
+  profile,
+  onSelect,
+  onDelete
+}) => {
+  const [hov, sh] = useState(false);
+  const strength = Math.min(100, (profile.letters?.length || 0) * 22);
+  return /*#__PURE__*/React.createElement("div", {
+    onMouseEnter: () => sh(true),
+    onMouseLeave: () => sh(false),
+    style: {
+      background: 'var(--sr)',
+      border: `1px solid ${hov ? 'var(--bk)' : 'var(--bd)'}`,
+      borderRadius: 13,
+      padding: 20,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+      cursor: 'pointer',
+      transform: hov ? 'translateY(-2px)' : 'none',
+      boxShadow: hov ? 'var(--smh)' : 'none',
+      transition: 'all 200ms var(--esf)'
+    },
+    onClick: onSelect
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 44,
+      height: 44,
+      borderRadius: 11,
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }
+  }, /*#__PURE__*/React.createElement(I.Voice, {
+    width: 20,
+    height: 20,
+    style: {
+      color: 'var(--b700)'
+    }
+  })), /*#__PURE__*/React.createElement("button", {
+    onClick: e => {
+      e.stopPropagation();
+      onDelete();
+    },
+    style: {
+      width: 28,
+      height: 28,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'none',
+      borderRadius: 6,
+      color: 'var(--tm)',
+      opacity: hov ? 1 : 0,
+      transition: 'opacity 150ms'
+    },
+    onMouseEnter: e => {
+      e.currentTarget.style.background = 'var(--r50)';
+      e.currentTarget.style.color = 'var(--r500)';
+    },
+    onMouseLeave: e => {
+      e.currentTarget.style.background = 'none';
+      e.currentTarget.style.color = 'var(--tm)';
+    }
+  }, /*#__PURE__*/React.createElement(I.Trash, {
+    width: 13,
+    height: 13
+  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      margin: 0,
+      fontSize: 17,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 4
+    }
+  }, profile.name), /*#__PURE__*/React.createElement("p", {
+    style: {
+      margin: 0,
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, profile.letters?.length || 0, " خطاب تدريب", profile.references?.length ? ` · ${profile.references.length} مرجع` : '')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      marginBottom: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tt)'
+    }
+  }, "قوة الملف"), /*#__PURE__*/React.createElement("span", {
+    className: "tnum",
+    style: {
+      fontSize: 11,
+      fontFamily: 'var(--fm)',
+      color: 'var(--b700)',
+      fontWeight: 600
+    }
+  }, strength, "%")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 4,
+      background: 'var(--n100)',
+      borderRadius: 2,
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: '100%',
+      width: `${strength}%`,
+      background: 'linear-gradient(90deg,var(--b200),var(--b500))',
+      transition: 'width 700ms var(--esf)'
+    }
+  }))), /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Pen,
+    variant: "secondary",
+    size: "sm",
+    fullWidth: true,
+    onClick: e => {
+      e.stopPropagation();
+      onSelect();
+    }
+  }, "فتح الملف"));
+};
+const ProfileDetailView = ({
+  profile,
+  onNav,
+  onEdit,
+  onGenerate,
+  onDelete
+}) => {
+  const strength = Math.min(100, (profile.letters?.length || 0) * 22);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 820,
+      margin: '0 auto'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('voices'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--tt)',
+      background: 'none',
+      marginBottom: 20,
+      transition: 'color 150ms'
+    },
+    onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+    onMouseLeave: e => e.currentTarget.style.color = 'var(--tt)'
+  }, /*#__PURE__*/React.createElement(I.Back, {
+    width: 14,
+    height: 14
+  }), " مكتبة ملفاتي"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 16,
+      marginBottom: 28,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
+    className: "fd",
+    style: {
+      margin: 0,
+      fontSize: 30,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      letterSpacing: '-.015em'
+    }
+  }, profile.name), /*#__PURE__*/React.createElement("p", {
+    style: {
+      margin: '6px 0 0',
+      fontSize: 13,
+      color: 'var(--tt)'
+    }
+  }, profile.letters?.length || 0, " عيّنة · ", profile.references?.length || 0, " مرجع · آخر تحديث ", formatDate(profile.updatedAt || profile.createdAt))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    icon: I.Pen,
+    size: "sm",
+    onClick: onEdit
+  }, "تعديل"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "brand",
+    icon: I.Pen,
+    onClick: onGenerate
+  }, "توليد خطاب"))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      fontWeight: 500,
+      color: 'var(--ts)'
+    }
+  }, "قوة الملف الأسلوبي"), /*#__PURE__*/React.createElement("span", {
+    className: "tnum",
+    style: {
+      fontSize: 26,
+      fontWeight: 700,
+      fontFamily: 'var(--fm)',
+      color: 'var(--tp)'
+    }
+  }, strength, "%")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 6,
+      background: 'var(--n100)',
+      borderRadius: 3,
+      overflow: 'hidden',
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: '100%',
+      width: `${strength}%`,
+      background: 'linear-gradient(90deg,var(--b200),var(--b500))',
+      transition: 'width 800ms var(--esf)'
+    }
+  })), strength < 80 && /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tt)'
+    }
+  }, "أضف ", Math.ceil((80 - strength) / 22), " خطابات أخرى لرفع الدقة إلى 80%")), profile.styleProfile && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 14,
+      paddingBottom: 14,
+      borderBottom: '1px solid var(--bs)'
+    }
+  }, /*#__PURE__*/React.createElement(I.Sparkle, {
+    width: 16,
+    height: 16,
+    style: {
+      color: 'var(--ac)'
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "البصمة الأسلوبية")), /*#__PURE__*/React.createElement("pre", {
+    style: {
+      margin: 0,
+      whiteSpace: 'pre-wrap',
+      fontSize: 14,
+      color: 'var(--ts)',
+      lineHeight: 1.8,
+      fontFamily: 'var(--ff)'
+    }
+  }, profile.styleProfile)), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "خطابات التدريب"), /*#__PURE__*/React.createElement(Badge, {
+    variant: "neutral"
+  }, profile.letters?.length || 0)), (profile.letters || []).map((l, i) => /*#__PURE__*/React.createElement("div", {
+    key: l.id || i,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: '10px 0',
+      borderBottom: i < profile.letters.length - 1 ? '1px solid var(--bs)' : 'none'
+    }
+  }, /*#__PURE__*/React.createElement(I.Doc, {
+    width: 14,
+    height: 14,
+    style: {
+      color: 'var(--tm)',
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tp)',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, l.title || `خطاب ${i + 1}`), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, l.content?.split(/\s+/).filter(Boolean).length || 0, " كلمة"))))), (profile.references || []).length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 24
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "الأدلة والمراجع"), /*#__PURE__*/React.createElement(Badge, {
+    variant: "brand"
+  }, profile.references.length)), profile.references.map((r, i) => /*#__PURE__*/React.createElement("div", {
+    key: r.id || i,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: '10px 0',
+      borderBottom: i < profile.references.length - 1 ? '1px solid var(--bs)' : 'none'
+    }
+  }, /*#__PURE__*/React.createElement(I.Doc, {
+    width: 14,
+    height: 14,
+    style: {
+      color: 'var(--ac)',
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tp)'
+    }
+  }, r.name || `مرجع ${i + 1}`), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, r.content?.length || 0, " حرف"))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "brand",
+    icon: I.Pen,
+    size: "lg",
+    onClick: onGenerate
+  }, "توليد خطاب بهذا الملف"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "danger",
+    icon: I.Trash,
+    onClick: onDelete
+  }, "حذف الملف")));
+};
+
+/* ── Create/Edit Profile ── */
+const CreateProfileView = ({
+  onNav,
+  onCreated,
+  existing
+}) => {
+  const [name, sn] = useState(existing?.name || '');
+  const [letters, sl] = useState(existing?.letters?.length ? [...existing.letters] : [{
+    id: genId(),
+    title: '',
+    content: ''
+  }]);
+  const [refs, sr] = useState(existing?.references?.length ? [...existing.references] : []);
+  const [analyzing, sa] = useState(false);
+  const [step, ss] = useState('input');
+  const [styleProfile, ssp] = useState('');
+  const [error, se] = useState('');
+  const validL = letters.filter(l => l.content && l.content.trim().length > 50);
+  const validR = refs.filter(r => r.content && r.content.trim().length > 50);
+  const canAnalyze = name.trim().length > 0 && validL.length >= 1;
+  const upL = (i, v) => sl(ls => ls.map((l, x) => x === i ? v : l));
+  const upR = (i, v) => sr(rs => rs.map((r, x) => x === i ? v : r));
+  const analyze = async () => {
+    se('');
+    sa(true);
+    ss('analyzing');
+    try {
+      const r = await analyzeStyle(validL, validR);
+      ssp(r);
+      ss('review');
+    } catch (e2) {
+      se(e2.message || 'حدث خطأ');
+      ss('input');
+    } finally {
+      sa(false);
+    }
+  };
+  const save = async () => {
+    const p = {
+      id: existing?.id || genId(),
+      name: name.trim(),
+      letters: validL,
+      references: validR,
+      styleProfile,
+      createdAt: existing?.createdAt || Date.now(),
+      updatedAt: Date.now()
+    };
+    await saveProfile(p);
+    onCreated(p);
+  };
+  if (step === 'analyzing') return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 560,
+      margin: '0 auto',
+      paddingTop: 80,
+      textAlign: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 80,
+      height: 80,
+      borderRadius: 20,
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      margin: '0 auto 24px',
+      position: 'relative'
+    }
+  }, /*#__PURE__*/React.createElement(Spinner, {
+    sz: 32
+  }), /*#__PURE__*/React.createElement(I.Sparkle, {
+    width: 18,
+    height: 18,
+    style: {
+      color: 'var(--ac)',
+      position: 'absolute'
+    }
+  })), /*#__PURE__*/React.createElement("h2", {
+    className: "fd",
+    style: {
+      fontSize: 26,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      marginBottom: 10
+    }
+  }, "جارٍ قراءة خطاباتك", validR.length ? ' والأدلة المرفقة' : '', "..."), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: 'var(--tt)',
+      lineHeight: 1.7,
+      maxWidth: 380,
+      margin: '0 auto'
+    }
+  }, "يحلّل الذكاء الاصطناعي أسلوبك ويرصد المفردات والصيغ والنبرة المميزة لك. قد يستغرق هذا دقيقة."));
+  if (step === 'review') return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 760,
+      margin: '0 auto'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => ss('input'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--tt)',
+      background: 'none',
+      marginBottom: 20,
+      cursor: 'pointer'
+    },
+    onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+    onMouseLeave: e => e.currentTarget.style.color = 'var(--tt)'
+  }, /*#__PURE__*/React.createElement(I.Back, {
+    width: 14,
+    height: 14
+  }), " العودة لتعديل الخطابات"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      marginBottom: 28
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 56,
+      height: 56,
+      borderRadius: '50%',
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      margin: '0 auto 12px'
+    }
+  }, /*#__PURE__*/React.createElement(I.Check, {
+    width: 26,
+    height: 26,
+    style: {
+      color: 'var(--ac)'
+    }
+  })), /*#__PURE__*/React.createElement("h2", {
+    className: "fd",
+    style: {
+      fontSize: 26,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      marginBottom: 6
+    }
+  }, "تم استخراج بصمتك الأسلوبية"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: 'var(--tt)'
+    }
+  }, "راجع التحليل ثم احفظ الملف.")), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 22,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 14,
+      paddingBottom: 14,
+      borderBottom: '1px solid var(--bs)'
+    }
+  }, /*#__PURE__*/React.createElement(I.Sparkle, {
+    width: 16,
+    height: 16,
+    style: {
+      color: 'var(--ac)'
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "دليل أسلوب: ", name)), /*#__PURE__*/React.createElement("pre", {
+    style: {
+      margin: 0,
+      whiteSpace: 'pre-wrap',
+      fontSize: 14,
+      color: 'var(--ts)',
+      lineHeight: 1.8,
+      fontFamily: 'var(--ff)'
+    }
+  }, styleProfile)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      justifyContent: 'flex-start'
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: () => onNav('voices')
+  }, "إلغاء"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    icon: I.Refresh,
+    onClick: analyze,
+    loading: analyzing
+  }, "إعادة التحليل"), /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Check,
+    onClick: save
+  }, "حفظ الملف الأسلوبي")));
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 760,
+      margin: '0 auto'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('voices'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--tt)',
+      background: 'none',
+      marginBottom: 20,
+      cursor: 'pointer'
+    },
+    onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+    onMouseLeave: e => e.currentTarget.style.color = 'var(--tt)'
+  }, /*#__PURE__*/React.createElement(I.Back, {
+    width: 14,
+    height: 14
+  }), " مكتبة ملفاتي"), /*#__PURE__*/React.createElement("h1", {
+    className: "fd",
+    style: {
+      fontSize: 30,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      margin: '0 0 6px',
+      letterSpacing: '-.015em'
+    }
+  }, existing ? 'تعديل الملف الأسلوبي' : 'إنشاء ملف جديد'), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: 'var(--tt)',
+      marginBottom: 28
+    }
+  }, "أعطِ ملفك اسماً وأضف عيّنات من خطاباتك. كلما زادت العيّنات كانت المحاكاة أدق."), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "اسم الملف الأسلوبي",
+    required: true,
+    hint: "مثلاً: خطابات الوزارات، مراسلات الشركات"
+  }, /*#__PURE__*/React.createElement(Input, {
+    placeholder: "اسم وصفي...",
+    value: name,
+    onChange: e => sn(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontSize: 18,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "عيّنات الخطابات"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tt)'
+    }
+  }, validL.length, " صالحة من ", letters.length)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+      marginBottom: 12
+    }
+  }, letters.map((l, i) => /*#__PURE__*/React.createElement(LetterSlot, {
+    key: l.id,
+    index: i,
+    letter: l,
+    onChange: v => upL(i, v),
+    onRemove: letters.length > 1 ? () => sl(ls => ls.filter((_, x) => x !== i)) : null
+  }))), /*#__PURE__*/React.createElement(Btn, {
+    variant: "outline",
+    icon: I.Plus,
+    onClick: () => sl(ls => [...ls, {
+      id: genId(),
+      title: '',
+      content: ''
+    }]),
+    fullWidth: true
+  }, "إضافة عيّنة أخرى"), validL.length > 0 && validL.length < 3 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      borderRadius: 10,
+      padding: '12px 16px',
+      marginTop: 12,
+      fontSize: 13,
+      color: 'var(--ts)'
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: 'var(--b700)'
+    }
+  }, "نصيحة:"), " أضف ٣ عيّنات على الأقل لدقة أفضل."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: '1px solid var(--bs)',
+      paddingTop: 20,
+      marginTop: 20,
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontSize: 18,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 6
+    }
+  }, "الأدلة والمراجع ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 400,
+      color: 'var(--tt)'
+    }
+  }, "(اختياري)")), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: 'var(--tt)',
+      marginBottom: 12,
+      lineHeight: 1.6
+    }
+  }, "أرفق أدلة تحريرية رسمية (بروتوكولات، هوية تحريرية...) — تطبّق بأولوية عالية على صيغ المخاطبة."), refs.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      marginBottom: 12
+    }
+  }, refs.map((r, i) => /*#__PURE__*/React.createElement(RefSlot, {
+    key: r.id,
+    reference: r,
+    onChange: v => upR(i, v),
+    onRemove: () => sr(rs => rs.filter((_, x) => x !== i))
+  }))), /*#__PURE__*/React.createElement(Btn, {
+    variant: "outline",
+    icon: I.Plus,
+    onClick: () => sr(rs => [...rs, {
+      id: genId(),
+      name: '',
+      content: ''
+    }]),
+    fullWidth: true
+  }, "إضافة مرجع")), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--r50)',
+      border: '1px solid var(--r500)',
+      borderRadius: 9,
+      padding: '12px 16px',
+      marginBottom: 14,
+      fontSize: 13,
+      color: 'var(--r500)'
+    }
+  }, /*#__PURE__*/React.createElement(I.Alert, {
+    width: 14,
+    height: 14,
+    style: {
+      verticalAlign: 'middle',
+      marginInlineEnd: 8
+    }
+  }), error), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: () => onNav('voices')
+  }, "إلغاء"), /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Sparkle,
+    onClick: analyze,
+    loading: analyzing,
+    disabled: !canAnalyze
+  }, "تحليل الأسلوب وحفظ الملف")));
+};
+
+/* ══════════════════════════════════════════════════
+   GENERATE + RESULT VIEWS
+   ══════════════════════════════════════════════════ */
+const GenerateView = ({
+  profiles,
+  templates,
+  defaultProfile,
+  defaultParams,
+  onNav,
+  onGenerated
+}) => {
+  const [profileId, spid] = useState(defaultParams?.profileId || defaultProfile?.id || profiles[0]?.id || '');
+  const [templateId, stid] = useState(defaultParams?.templateId || templates[0]?.id || '');
+  const [recipient, sre] = useState(defaultParams?.recipient || '');
+  const [subject, ssu] = useState(defaultParams?.subject || '');
+  const [purpose, spu] = useState(defaultParams?.purpose || '');
+  const [keyPoints, skp] = useState(defaultParams?.keyPoints || '');
+  const [tonePreset, stp] = useState(defaultParams?.tonePreset || 'default');
+  const [docs, sd] = useState(defaultParams?.supportingDocs || []);
+  const [generating, sg] = useState(false);
+  const [error, se] = useState('');
+  const [showDocs, ssd] = useState(false);
+  const selectedProfile = profiles.find(p => p.id === profileId);
+  const selectedTemplate = templates.find(t => t.id === templateId);
+  const tone = TONE_PRESETS.find(t => t.id === tonePreset)?.value || '';
+  const canGenerate = profileId && recipient.trim() && subject.trim() && purpose.trim();
+  const addDoc = () => sd(ds => [...ds, {
+    id: genId(),
+    name: '',
+    content: '',
+    purpose: ''
+  }]);
+  const upDoc = (i, v) => sd(ds => ds.map((d, x) => x === i ? v : d));
+  const generate = async () => {
+    if (!selectedProfile) {
+      se('اختر ملفاً أسلوبياً أولاً');
+      return;
+    }
+    se('');
+    sg(true);
+    try {
+      const content = await generateLetterAI(selectedProfile, {
+        recipient,
+        subject,
+        purpose,
+        keyPoints,
+        tone,
+        supportingDocs: docs.filter(d => d.content)
+      });
+      const letter = {
+        id: genId(),
+        profileId,
+        profileName: selectedProfile.name,
+        templateId,
+        recipient,
+        subject,
+        purpose,
+        keyPoints,
+        tonePreset,
+        supportingDocs: docs.filter(d => d.content),
+        content,
+        generatedAt: Date.now()
+      };
+      await saveLetter(letter);
+      onGenerated(letter);
+    } catch (e2) {
+      se(e2.message || 'حدث خطأ');
+    } finally {
+      sg(false);
+    }
+  };
+  if (profiles.length === 0) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 560,
+      margin: '80px auto 0',
+      textAlign: 'center'
+    }
+  }, /*#__PURE__*/React.createElement(EmptyState, {
+    icon: I.Voice,
+    title: "لا توجد ملفات أسلوبية بعد",
+    description: "أنشئ ملفاً أسلوبياً أولاً.",
+    action: /*#__PURE__*/React.createElement(Btn, {
+      icon: I.Plus,
+      onClick: () => onNav('create')
+    }, "إنشاء ملف")
+  }));
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 720,
+      margin: '0 auto'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('home'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--tt)',
+      background: 'none',
+      marginBottom: 20,
+      cursor: 'pointer'
+    },
+    onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+    onMouseLeave: e => e.currentTarget.style.color = 'var(--tt)'
+  }, /*#__PURE__*/React.createElement(I.Back, {
+    width: 14,
+    height: 14
+  }), " الرئيسية"), /*#__PURE__*/React.createElement("h1", {
+    className: "fd",
+    style: {
+      fontSize: 30,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      margin: '0 0 6px',
+      letterSpacing: '-.015em'
+    }
+  }, "توليد خطاب"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: 'var(--tt)',
+      marginBottom: 28
+    }
+  }, "أخبرنا بما تريده، وسنصيغه بأسلوبك."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 14,
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'block',
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tt)',
+      marginBottom: 7
+    }
+  }, "الملف الأسلوبي ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--ac)'
+    }
+  }, "*")), /*#__PURE__*/React.createElement("select", {
+    value: profileId,
+    onChange: e => spid(e.target.value),
+    style: {
+      width: '100%',
+      height: 44,
+      padding: '0 12px',
+      background: 'var(--sr)',
+      border: '1px solid var(--bd)',
+      borderRadius: 10,
+      fontSize: 14,
+      fontFamily: 'var(--ff)',
+      color: 'var(--tp)',
+      outline: 'none'
+    }
+  }, profiles.map(p => /*#__PURE__*/React.createElement("option", {
+    key: p.id,
+    value: p.id
+  }, p.name))), selectedProfile && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 11,
+      color: 'var(--tt)'
+    }
+  }, selectedProfile.letters?.length || 0, " خطاب تدريب", selectedProfile.references?.length ? ` · ${selectedProfile.references.length} مرجع` : '')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'block',
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tt)',
+      marginBottom: 7
+    }
+  }, "القالب البصري"), /*#__PURE__*/React.createElement("select", {
+    value: templateId,
+    onChange: e => stid(e.target.value),
+    style: {
+      width: '100%',
+      height: 44,
+      padding: '0 12px',
+      background: 'var(--sr)',
+      border: '1px solid var(--bd)',
+      borderRadius: 10,
+      fontSize: 14,
+      fontFamily: 'var(--ff)',
+      color: 'var(--tp)',
+      outline: 'none'
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "بدون قالب"), templates.map(t => /*#__PURE__*/React.createElement("option", {
+    key: t.id,
+    value: t.id
+  }, t.name))), templates.length === 0 && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 5,
+      fontSize: 11,
+      color: 'var(--tm)'
+    }
+  }, "لا توجد قوالب. ", /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('templates'),
+    style: {
+      color: 'var(--ac)',
+      background: 'none',
+      cursor: 'pointer',
+      fontSize: 11,
+      textDecoration: 'underline'
+    }
+  }, "أنشئ قالباً")))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "إلى من؟",
+    placeholder: "مثل: معالي وزير الموارد البشرية",
+    value: recipient,
+    onChange: e => sre(e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "الموضوع",
+    placeholder: "موضوع مختصر وواضح",
+    value: subject,
+    onChange: e => ssu(e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "ماذا تريد أن تقول؟",
+    hint: "بأي صياغة — سنحوّلها لخطاب رسمي بأسلوبك",
+    placeholder: "صف هدف الخطاب بكلماتك الخاصة...",
+    rows: 4,
+    value: purpose,
+    onChange: e => spu(e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "نقاط محددة للإضافة",
+    hint: "اختياري — نقاط بعينها تريد تضمينها",
+    placeholder: "نقطة ١: ...\nنقطة ٢: ...",
+    rows: 3,
+    value: keyPoints,
+    onChange: e => skp(e.target.value)
+  })), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      margin: '0 0 12px',
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)'
+    }
+  }, "النبرة"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8
+    }
+  }, TONE_PRESETS.map(t => /*#__PURE__*/React.createElement("button", {
+    key: t.id,
+    onClick: () => stp(t.id),
+    style: {
+      height: 32,
+      padding: '0 12px',
+      borderRadius: 7,
+      fontSize: 13,
+      fontWeight: 500,
+      background: tonePreset === t.id ? 'var(--n900)' : 'var(--surface)',
+      color: tonePreset === t.id ? 'var(--ti)' : 'var(--ts)',
+      border: `1px solid ${tonePreset === t.id ? 'transparent' : 'var(--bd)'}`,
+      cursor: 'pointer',
+      transition: 'all 150ms'
+    }
+  }, t.label)))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => ssd(p => !p),
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      width: '100%',
+      padding: '14px 18px',
+      background: 'var(--sr)',
+      border: '1px solid var(--bd)',
+      borderRadius: 10,
+      marginBottom: showDocs ? 0 : 16,
+      cursor: 'pointer',
+      fontFamily: 'var(--ff)'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      fontWeight: 500,
+      color: 'var(--tp)'
+    }
+  }, "مستندات داعمة ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 400,
+      color: 'var(--tm)'
+    }
+  }, "(اختياري)")), /*#__PURE__*/React.createElement(I.ChD, {
+    width: 16,
+    height: 16,
+    style: {
+      color: 'var(--tm)',
+      transform: showDocs ? 'rotate(180deg)' : 'none',
+      transition: 'transform 200ms'
+    }
+  })), showDocs && /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderInline: '1px solid var(--bd)',
+      borderBottom: '1px solid var(--bd)',
+      borderRadius: '0 0 10px 10px',
+      padding: 16,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: 'var(--tt)',
+      marginBottom: 12
+    }
+  }, "ارفع خطاباً وارداً للرد عليه، أو نظاماً للاستشهاد به."), docs.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      marginBottom: 10
+    }
+  }, docs.map((d, i) => /*#__PURE__*/React.createElement(DocSlot, {
+    key: d.id,
+    index: i,
+    doc: d,
+    onChange: v => upDoc(i, v),
+    onRemove: () => sd(ds => ds.filter((_, x) => x !== i))
+  }))), /*#__PURE__*/React.createElement(Btn, {
+    variant: "outline",
+    icon: I.Plus,
+    onClick: addDoc,
+    fullWidth: true
+  }, "إضافة مستند")), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--r50)',
+      border: '1px solid var(--r500)',
+      borderRadius: 9,
+      padding: '12px 16px',
+      marginBottom: 14,
+      fontSize: 13,
+      color: 'var(--r500)'
+    }
+  }, /*#__PURE__*/React.createElement(I.Alert, {
+    width: 14,
+    height: 14,
+    style: {
+      verticalAlign: 'middle',
+      marginInlineEnd: 8
+    }
+  }), error), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: () => onNav('home')
+  }, "إلغاء"), /*#__PURE__*/React.createElement(Btn, {
+    icon: generating ? null : I.Sparkle,
+    onClick: generate,
+    loading: generating,
+    disabled: !canGenerate,
+    size: "lg"
+  }, generating ? 'جارٍ التوليد...' : 'توليد الخطاب')));
+};
+
+/* ── Result ── */
+const ResultView = ({
+  letter,
+  profile,
+  templates,
+  onNav,
+  onRegenerate
+}) => {
+  const [copied, sc] = useState(false);
+  const template = templates?.find(t => t.id === letter.templateId);
+  const copy = () => {
+    navigator.clipboard.writeText(letter.content).then(() => {
+      sc(true);
+      setTimeout(() => sc(false), 2000);
+    });
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 820,
+      margin: '0 auto'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('history'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--tt)',
+      background: 'none',
+      marginBottom: 20,
+      cursor: 'pointer'
+    },
+    onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+    onMouseLeave: e => e.currentTarget.style.color = 'var(--tt)'
+  }, /*#__PURE__*/React.createElement(I.Back, {
+    width: 14,
+    height: 14
+  }), " السجل"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 22,
+      flexWrap: 'wrap',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
+    className: "fd",
+    style: {
+      margin: 0,
+      fontSize: 26,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      letterSpacing: '-.015em'
+    }
+  }, letter.subject || 'خطاب'), /*#__PURE__*/React.createElement("p", {
+    style: {
+      margin: '5px 0 0',
+      fontSize: 13,
+      color: 'var(--tt)'
+    }
+  }, "إلى: ", letter.recipient, " · ", profile?.name || '', " · ", formatDate(letter.generatedAt))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    icon: copied ? I.Check : I.Copy,
+    onClick: copy,
+    size: "sm"
+  }, copied ? 'تم النسخ' : 'نسخ النص'), /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    icon: I.Download,
+    onClick: () => exportToWord(letter.subject, letter.content, template),
+    size: "sm"
+  }, "تنزيل Word"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    icon: I.Refresh,
+    onClick: onRegenerate,
+    size: "sm"
+  }, "إعادة التوليد"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--dp)',
+      border: '1px solid var(--n200)',
+      borderRadius: 14,
+      padding: '40px 48px',
+      boxShadow: 'var(--smh)',
+      marginBottom: 20
+    }
+  }, template && (template.logoDataUrl || template.orgLine1) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 28,
+      paddingBottom: 20,
+      borderBottom: '1.5px solid var(--b500)'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, template.orgLine1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: 'var(--n700)'
+    }
+  }, template.orgLine1), template.orgLine2 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      marginTop: 2
+    }
+  }, template.orgLine2), template.orgLine3 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: 'var(--tt)',
+      marginTop: 2
+    }
+  }, template.orgLine3)), template.logoDataUrl && /*#__PURE__*/React.createElement("img", {
+    src: template.logoDataUrl,
+    alt: "logo",
+    style: {
+      maxHeight: 80,
+      maxWidth: 180
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Amiri','Sakkal Majalla',serif",
+      fontSize: 17,
+      lineHeight: 1.9,
+      color: 'var(--n900)',
+      direction: 'rtl',
+      textAlign: 'right',
+      whiteSpace: 'pre-wrap'
+    }
+  }, letter.content.split(/\n/).map((line, i) => {
+    const isGr = isGreetingLine(line);
+    const isCl = isClosingLine(line);
+    return /*#__PURE__*/React.createElement("p", {
+      key: i,
+      style: {
+        margin: '0 0 10px',
+        fontWeight: isGr || isCl ? 700 : 400,
+        textAlign: isCl ? 'center' : 'right',
+        marginBottom: isCl ? '20px' : '10px'
+      }
+    }, line);
+  })), template && (template.senderName || template.senderTitle) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 36,
+      textAlign: 'left',
+      fontFamily: "'Amiri',serif"
+    }
+  }, template.senderTitle && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700,
+      color: 'var(--tp)'
+    }
+  }, template.senderTitle), template.senderName && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      color: 'var(--ts)',
+      marginTop: 5
+    }
+  }, template.senderName))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--b50)',
+      border: '1px solid var(--b100)',
+      borderRadius: 10,
+      padding: '12px 16px',
+      fontSize: 13,
+      color: 'var(--b700)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(I.Sparkle, {
+    width: 14,
+    height: 14
+  }), " غير راضياً عن النتيجة؟ ", /*#__PURE__*/React.createElement("button", {
+    onClick: onRegenerate,
+    style: {
+      background: 'none',
+      color: 'var(--b700)',
+      textDecoration: 'underline',
+      fontSize: 13,
+      cursor: 'pointer',
+      fontFamily: 'var(--ff)',
+      fontWeight: 600
+    }
+  }, "أعد التوليد"), " أو ", /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('generate'),
+    style: {
+      background: 'none',
+      color: 'var(--b700)',
+      textDecoration: 'underline',
+      fontSize: 13,
+      cursor: 'pointer',
+      fontFamily: 'var(--ff)',
+      fontWeight: 600
+    }
+  }, "عدّل المعاملات"), "."));
+};
+
+/* ══════════════════════════════════════════════════
+   HISTORY VIEW
+   ══════════════════════════════════════════════════ */
+const HistoryView = ({
+  history,
+  onNav,
+  onView,
+  onDelete
+}) => {
+  const [del, sdel] = useState(null);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 28
+    }
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "fd",
+    style: {
+      fontSize: 32,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      margin: 0,
+      letterSpacing: '-.015em'
+    }
+  }, "الخطابات"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      margin: '6px 0 0',
+      fontSize: 14,
+      color: 'var(--tt)'
+    }
+  }, "سجل كامل لجميع الخطابات التي تم توليدها.")), history.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0
+    }
+  }, /*#__PURE__*/React.createElement(EmptyState, {
+    icon: I.Mail,
+    title: "السجل فارغ",
+    description: "ستظهر هنا الخطابات التي تولّدها.",
+    action: /*#__PURE__*/React.createElement(Btn, {
+      icon: I.Pen,
+      onClick: () => onNav('generate')
+    }, "توليد خطاب")
+  })) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }
+  }, history.map(l => {
+    const [h, sh] = useState(false);
+    return /*#__PURE__*/React.createElement("div", {
+      key: l.id,
+      onMouseEnter: () => sh(true),
+      onMouseLeave: () => sh(false),
+      style: {
+        background: 'var(--sr)',
+        border: `1px solid ${h ? 'var(--bk)' : 'var(--bd)'}`,
+        borderRadius: 13,
+        padding: '16px 20px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+        cursor: 'pointer',
+        boxShadow: h ? 'var(--smh)' : 'none',
+        transition: 'all 170ms var(--esf)'
+      },
+      onClick: () => onView(l)
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: {
+        margin: '0 0 4px',
+        fontSize: 16,
+        fontWeight: 600,
+        color: 'var(--tp)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, l.subject || 'خطاب بدون موضوع'), /*#__PURE__*/React.createElement("p", {
+      style: {
+        margin: '0 0 8px',
+        fontSize: 13,
+        color: 'var(--tt)'
+      }
+    }, l.recipient && `إلى: ${l.recipient}`), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        fontSize: 12,
+        color: 'var(--tm)'
+      }
+    }, /*#__PURE__*/React.createElement("span", null, formatDate(l.generatedAt)), l.profileName && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", null, "·"), /*#__PURE__*/React.createElement("span", null, l.profileName)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 6,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      variant: "ghost",
+      size: "sm",
+      icon: I.Eye,
+      onClick: e => {
+        e.stopPropagation();
+        onView(l);
+      }
+    }, "عرض"), /*#__PURE__*/React.createElement(Btn, {
+      variant: "ghost",
+      size: "sm",
+      icon: I.Trash,
+      onClick: e => {
+        e.stopPropagation();
+        sdel(l);
+      }
+    })));
+  })), /*#__PURE__*/React.createElement(Modal, {
+    open: !!del,
+    onClose: () => sdel(null),
+    title: "حذف الخطاب",
+    footer: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Btn, {
+      variant: "ghost",
+      onClick: () => sdel(null)
+    }, "إلغاء"), /*#__PURE__*/React.createElement(Btn, {
+      variant: "danger",
+      icon: I.Trash,
+      onClick: () => {
+        onDelete(del.id);
+        sdel(null);
+      }
+    }, "حذف"))
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: 'var(--ts)'
+    }
+  }, "هل أنت متأكد من حذف هذا الخطاب من السجل؟")));
+};
+
+/* ══════════════════════════════════════════════════
+   TEMPLATES VIEW
+   ══════════════════════════════════════════════════ */
+const TemplatesView = ({
+  templates,
+  onNav,
+  onEdit,
+  onCreate,
+  onDelete
+}) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 28
+  }
+}, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
+  className: "fd",
+  style: {
+    fontSize: 32,
+    fontWeight: 700,
+    color: 'var(--tp)',
+    margin: 0,
+    letterSpacing: '-.015em'
+  }
+}, "القوالب"), /*#__PURE__*/React.createElement("p", {
+  style: {
+    margin: '6px 0 0',
+    fontSize: 14,
+    color: 'var(--tt)'
+  }
+}, "قوالب الهوية البصرية — شعار الجهة، ترويسة، توقيع المرسل.")), /*#__PURE__*/React.createElement(Btn, {
+  icon: I.Plus,
+  onClick: onCreate
+}, "إنشاء قالب")), templates.length === 0 ? /*#__PURE__*/React.createElement(Card, {
+  style: {
+    padding: 0
+  }
+}, /*#__PURE__*/React.createElement(EmptyState, {
+  icon: I.Tmpl,
+  title: "لا توجد قوالب بعد",
+  description: "أنشئ قالباً لإضافة شعار جهتك واسم المُصدِر إلى الخطابات.",
+  action: /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Plus,
+    onClick: onCreate
+  }, "إنشاء أول قالب")
+})) : /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))',
+    gap: 14
+  }
+}, templates.map(t => /*#__PURE__*/React.createElement(TemplateCard, {
+  key: t.id,
+  template: t,
+  onEdit: () => onEdit(t),
+  onDelete: () => {
+    if (confirm(`حذف قالب "${t.name}"؟`)) onDelete(t.id);
+  }
+})), /*#__PURE__*/React.createElement("button", {
+  onClick: onCreate,
+  style: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    padding: 24,
+    background: 'transparent',
+    border: '1.5px dashed var(--n300)',
+    borderRadius: 13,
+    cursor: 'pointer',
+    color: 'var(--tt)',
+    transition: 'all 170ms var(--esf)',
+    minHeight: 160,
+    fontFamily: 'var(--ff)'
+  },
+  onMouseEnter: e => {
+    e.currentTarget.style.borderColor = 'var(--ac)';
+    e.currentTarget.style.color = 'var(--b700)';
+    e.currentTarget.style.background = 'var(--b50)';
+  },
+  onMouseLeave: e => {
+    e.currentTarget.style.borderColor = 'var(--n300)';
+    e.currentTarget.style.color = 'var(--tt)';
+    e.currentTarget.style.background = 'transparent';
+  }
+}, /*#__PURE__*/React.createElement(I.Plus, {
+  width: 28,
+  height: 28
+}), /*#__PURE__*/React.createElement("span", {
+  style: {
+    fontSize: 14,
+    fontWeight: 500
+  }
+}, "قالب جديد"))));
+const TemplateCard = ({
+  template: t,
+  onEdit,
+  onDelete
+}) => {
+  const [hov, sh] = useState(false);
+  return /*#__PURE__*/React.createElement("div", {
+    onMouseEnter: () => sh(true),
+    onMouseLeave: () => sh(false),
+    style: {
+      background: 'var(--sr)',
+      border: `1px solid ${hov ? 'var(--bk)' : 'var(--bd)'}`,
+      borderRadius: 13,
+      padding: 20,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 14,
+      boxShadow: hov ? 'var(--smh)' : 'none',
+      transform: hov ? 'translateY(-2px)' : 'none',
+      transition: 'all 200ms var(--esf)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--dp)',
+      borderRadius: 8,
+      padding: '14px 16px',
+      minHeight: 80
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 8,
+      paddingBottom: 8,
+      borderBottom: '1px solid var(--b500)'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, t.orgLine2 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: 'var(--tp)'
+    }
+  }, t.orgLine2), t.orgLine1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: 'var(--tt)'
+    }
+  }, t.orgLine1)), t.logoDataUrl && /*#__PURE__*/React.createElement("img", {
+    src: t.logoDataUrl,
+    alt: "logo",
+    style: {
+      maxHeight: 40,
+      maxWidth: 80
+    }
+  })), t.senderTitle && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: 'var(--ts)',
+      fontWeight: 600
+    }
+  }, t.senderTitle), t.senderName && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: 'var(--tt)'
+    }
+  }, t.senderName)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      margin: 0,
+      fontSize: 16,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 2
+    }
+  }, t.name), t.orgLine2 && /*#__PURE__*/React.createElement("p", {
+    style: {
+      margin: 0,
+      fontSize: 12,
+      color: 'var(--tt)'
+    }
+  }, t.orgLine2)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    icon: I.Pen,
+    size: "sm",
+    onClick: onEdit,
+    fullWidth: true
+  }, "تعديل"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    size: "sm",
+    icon: I.Trash,
+    onClick: onDelete
+  })));
+};
+const TemplateEditor = ({
+  existing,
+  onNav,
+  onSaved
+}) => {
+  const [name, sn] = useState(existing?.name || '');
+  const [orgLine1, so1] = useState(existing?.orgLine1 || '');
+  const [orgLine2, so2] = useState(existing?.orgLine2 || '');
+  const [orgLine3, so3] = useState(existing?.orgLine3 || '');
+  const [senderTitle, sst] = useState(existing?.senderTitle || '');
+  const [senderName, ssn] = useState(existing?.senderName || '');
+  const [logoDataUrl, sldurl] = useState(existing?.logoDataUrl || '');
+  const [logoErr, sle] = useState('');
+  const [logoLoad, sll] = useState(false);
+  const [saving, ssave] = useState(false);
+  const fileRef = useRef();
+  const handleLogo = async e => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    sll(true);
+    sle('');
+    try {
+      const url = await readImageAsDataUrl(f);
+      sldurl(url);
+    } catch (err) {
+      sle(err.message);
+    } finally {
+      sll(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+  const save = async () => {
+    if (!name.trim()) {
+      alert('اكتب اسم القالب');
+      return;
+    }
+    ssave(true);
+    try {
+      const t = {
+        id: existing?.id || genId(),
+        name: name.trim(),
+        orgLine1,
+        orgLine2,
+        orgLine3,
+        senderTitle,
+        senderName,
+        logoDataUrl,
+        createdAt: existing?.createdAt || Date.now(),
+        updatedAt: Date.now()
+      };
+      await saveTemplate(t);
+      onSaved();
+    } catch (e) {
+      alert('خطأ: ' + e.message);
+    } finally {
+      ssave(false);
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 720,
+      margin: '0 auto'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onNav('templates'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--tt)',
+      background: 'none',
+      marginBottom: 20,
+      cursor: 'pointer'
+    },
+    onMouseEnter: e => e.currentTarget.style.color = 'var(--tp)',
+    onMouseLeave: e => e.currentTarget.style.color = 'var(--tt)'
+  }, /*#__PURE__*/React.createElement(I.Back, {
+    width: 14,
+    height: 14
+  }), " القوالب"), /*#__PURE__*/React.createElement("h1", {
+    className: "fd",
+    style: {
+      fontSize: 30,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      margin: '0 0 24px',
+      letterSpacing: '-.015em'
+    }
+  }, existing ? 'تعديل القالب' : 'إنشاء قالب'), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "اسم القالب",
+    required: true,
+    placeholder: "مثل: ترويسة الوزارة",
+    value: name,
+    onChange: e => sn(e.target.value)
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: '1px solid var(--bs)',
+      paddingTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 12
+    }
+  }, "بيانات الجهة"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "السطر الأول",
+    placeholder: "الوزارة / الشركة / الجهة",
+    value: orgLine1,
+    onChange: e => so1(e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "السطر الثاني (بارز)",
+    placeholder: "اسم الجهة الرسمي الكامل",
+    value: orgLine2,
+    onChange: e => so2(e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "السطر الثالث",
+    placeholder: "قسم / إدارة / وصف",
+    value: orgLine3,
+    onChange: e => so3(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: '1px solid var(--bs)',
+      paddingTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 12
+    }
+  }, "المرسل / الموقّع"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "المسمى الوظيفي",
+    placeholder: "مثل: مدير إدارة الشؤون القانونية",
+    value: senderTitle,
+    onChange: e => sst(e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "الاسم",
+    placeholder: "الاسم الثلاثي للموقّع",
+    value: senderName,
+    onChange: e => ssn(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: '1px solid var(--bs)',
+      paddingTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 10
+    }
+  }, "الشعار"), /*#__PURE__*/React.createElement("input", {
+    ref: fileRef,
+    type: "file",
+    accept: "image/png,image/jpeg,image/webp,image/svg+xml",
+    onChange: handleLogo,
+    style: {
+      display: 'none'
+    }
+  }), logoDataUrl ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: logoDataUrl,
+    alt: "logo preview",
+    style: {
+      maxHeight: 70,
+      maxWidth: 180,
+      borderRadius: 6,
+      border: '1px solid var(--bd)'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "secondary",
+    size: "sm",
+    icon: I.Upload,
+    onClick: () => fileRef.current?.click(),
+    loading: logoLoad
+  }, "تغيير"), /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    size: "sm",
+    icon: I.Trash,
+    onClick: () => sldurl('')
+  }))) : /*#__PURE__*/React.createElement(Btn, {
+    variant: "outline",
+    icon: I.Upload,
+    onClick: () => fileRef.current?.click(),
+    loading: logoLoad
+  }, "رفع الشعار"), logoErr && /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 6,
+      fontSize: 12,
+      color: 'var(--r500)'
+    }
+  }, logoErr), /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 6,
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, "PNG / JPG / SVG · حد أقصى 2 ميجابايت"))), (orgLine2 || logoDataUrl) && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: 'var(--tp)',
+      marginBottom: 12
+    }
+  }, "معاينة الترويسة"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'var(--dp)',
+      padding: '18px 22px',
+      borderRadius: 8,
+      border: '1px solid var(--n200)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      paddingBottom: 12,
+      borderBottom: '1.5px solid var(--b500)'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, orgLine1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: 'var(--n700)'
+    }
+  }, orgLine1), orgLine2 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700,
+      color: 'var(--tp)',
+      marginTop: 2
+    }
+  }, orgLine2), orgLine3 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--tt)',
+      marginTop: 2
+    }
+  }, orgLine3)), logoDataUrl && /*#__PURE__*/React.createElement("img", {
+    src: logoDataUrl,
+    alt: "preview",
+    style: {
+      maxHeight: 56,
+      maxWidth: 140
+    }
+  })), (senderTitle || senderName) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      textAlign: 'left'
+    }
+  }, senderTitle && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: 'var(--tp)'
+    }
+  }, senderTitle), senderName && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: 'var(--ts)',
+      marginTop: 3
+    }
+  }, senderName)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: () => onNav('templates')
+  }, "إلغاء"), /*#__PURE__*/React.createElement(Btn, {
+    icon: I.Check,
+    onClick: save,
+    loading: saving
+  }, "حفظ القالب")));
+};
+
+/* ══════════════════════════════════════════════════
+   ROOT APP
+   ══════════════════════════════════════════════════ */
+function App() {
+  const [view, sv] = useState('home');
+  const [profiles, sp] = useState([]);
+  const [history, sh] = useState([]);
+  const [templates, st] = useState([]);
+  const [curProfile, scp] = useState(null);
+  const [curLetter, scl] = useState(null);
+  const [editProfile, sep] = useState(null);
+  const [editTemplate, set] = useState(null);
+  const [regenParams, srp] = useState(null);
+  const [loaded, sl] = useState(false);
+  const [sidebarCollapsed, ssc] = useState(false);
+  const [toast, sto] = useState(null);
+  const showToast = useCallback((msg, type = 'neutral') => {
+    sto({
+      msg,
+      type
+    });
+    setTimeout(() => sto(null), 3500);
+  }, []);
+
+  /* Load data */
+  useEffect(() => {
+    (async () => {
+      const [p, h, t] = await Promise.all([loadProfiles(), loadHistory(), loadTemplates()]);
+      sp(p);
+      sh(h);
+      st(t);
+      sl(true);
+    })();
+  }, []);
+  const refresh = async () => {
+    const [p, h, t] = await Promise.all([loadProfiles(), loadHistory(), loadTemplates()]);
+    sp(p);
+    sh(h);
+    st(t);
+  };
+  const nav = useCallback(v => {
+    sv(v);
+    if (v === 'home' || v === 'voices') {
+      scp(null);
+      scl(null);
+      sep(null);
+      srp(null);
+      set(null);
+    }
+    if (v !== 'generate') srp(null);
+    if (v !== 'template-edit') set(null);
+  }, []);
+
+  /* Handlers */
+  const selectProfile = p => {
+    scp(p);
+    sv('profile');
+  };
+  const editPro = p => {
+    sep(p);
+    sv('create');
+  };
+  const delProfile = async id => {
+    await deleteProfile(id);
+    await refresh();
+  };
+  const profileCreated = async p => {
+    await refresh();
+    sep(null);
+    scp(p);
+    sv('profile');
+  };
+  const startGenerate = p => {
+    scp(p);
+    srp(null);
+    sv('generate');
+  };
+  const letterGenerated = async l => {
+    scl(l);
+    await refresh();
+    sv('result');
+  };
+  const regen = () => {
+    if (curLetter) {
+      srp({
+        profileId: curLetter.profileId,
+        recipient: curLetter.recipient,
+        subject: curLetter.subject,
+        purpose: curLetter.purpose,
+        keyPoints: curLetter.keyPoints,
+        tonePreset: curLetter.tonePreset || 'default',
+        supportingDocs: curLetter.supportingDocs || [],
+        templateId: curLetter.templateId || ''
+      });
+    }
+    sv('generate');
+  };
+  const viewLetter = l => {
+    scl(l);
+    sv('result');
+  };
+  const delLetter = async id => {
+    await deleteLetter(id);
+    await refresh();
+  };
+  const tmplSaved = async () => {
+    await refresh();
+    set(null);
+    sv('templates');
+  };
+  const delTemplate = async id => {
+    await deleteTemplate(id);
+    await refresh();
+  };
+  if (!loaded) return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(GlobalStyles, null), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--canvas)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement(Logo, null), /*#__PURE__*/React.createElement(Spinner, {
+    sz: 28
+  }), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: 'var(--tt)'
+    }
+  }, "جارٍ التحميل..."))));
+
+  /* Determine current nav highlight */
+  const navCurrent = view === 'profile' ? 'voices' : view === 'create' ? 'voices' : view === 'result' ? 'history' : view === 'template-edit' ? 'templates' : view;
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(GlobalStyles, null), toast && /*#__PURE__*/React.createElement(Toast, {
+    msg: toast.msg,
+    type: toast.type || 'neutral',
+    onD: () => sto(null)
+  }), /*#__PURE__*/React.createElement("div", {
+    dir: "rtl",
+    lang: "ar",
+    style: {
+      minHeight: '100vh',
+      background: 'var(--canvas)',
+      display: 'flex',
+      flexDirection: 'column'
+    }
+  }, /*#__PURE__*/React.createElement(Header, {
+    onNav: nav,
+    current: navCurrent,
+    sidebarCollapsed: sidebarCollapsed,
+    onToggleSidebar: () => ssc(p => !p),
+    onNew: () => nav('generate'),
+    profileCount: profiles.length,
+    historyCount: history.length
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(Sidebar, {
+    current: navCurrent,
+    onNav: nav,
+    collapsed: sidebarCollapsed,
+    profileCount: profiles.length,
+    onUpgrade: () => showToast('جاري فتح صفحة الترقية...')
+  }), /*#__PURE__*/React.createElement("main", {
+    style: {
+      flex: 1,
+      padding: '36px 40px 80px',
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 960,
+      margin: '0 auto',
+      animation: 'fadeu 300ms var(--esf)'
+    }
+  }, view === 'home' && /*#__PURE__*/React.createElement(DashboardView, {
+    profiles: profiles,
+    history: history,
+    templates: templates,
+    onNav: nav,
+    onSelectProfile: selectProfile
+  }), view === 'voices' && /*#__PURE__*/React.createElement(VoicesView, {
+    profiles: profiles,
+    onNav: nav,
+    onSelect: selectProfile,
+    onDelete: async id => {
+      await delProfile(id);
+      showToast('تم حذف الملف', 'success');
+    }
+  }), view === 'profile' && curProfile && /*#__PURE__*/React.createElement(ProfileDetailView, {
+    profile: curProfile,
+    onNav: nav,
+    onEdit: () => editPro(curProfile),
+    onGenerate: () => startGenerate(curProfile),
+    onDelete: () => {
+      if (confirm(`حذف "${curProfile.name}"؟`)) {
+        delProfile(curProfile.id);
+        nav('voices');
+        showToast('تم الحذف', 'success');
+      }
+    }
+  }), view === 'create' && /*#__PURE__*/React.createElement(CreateProfileView, {
+    onNav: nav,
+    onCreated: profileCreated,
+    existing: editProfile
+  }), view === 'generate' && /*#__PURE__*/React.createElement(GenerateView, {
+    profiles: profiles,
+    templates: templates,
+    defaultProfile: curProfile,
+    defaultParams: regenParams,
+    onNav: nav,
+    onGenerated: letterGenerated
+  }), view === 'result' && curLetter && /*#__PURE__*/React.createElement(ResultView, {
+    letter: curLetter,
+    profile: profiles.find(p => p.id === curLetter.profileId),
+    templates: templates,
+    onNav: nav,
+    onRegenerate: regen
+  }), view === 'history' && /*#__PURE__*/React.createElement(HistoryView, {
+    history: history,
+    onNav: nav,
+    onView: viewLetter,
+    onDelete: async id => {
+      await delLetter(id);
+      showToast('تم الحذف');
+    }
+  }), view === 'templates' && /*#__PURE__*/React.createElement(TemplatesView, {
+    templates: templates,
+    onNav: nav,
+    onEdit: t => {
+      set(t);
+      sv('template-edit');
+    },
+    onCreate: () => {
+      set(null);
+      sv('template-edit');
+    },
+    onDelete: async id => {
+      await delTemplate(id);
+      showToast('تم الحذف', 'success');
+    }
+  }), view === 'template-edit' && /*#__PURE__*/React.createElement(TemplateEditor, {
+    existing: editTemplate,
+    onNav: nav,
+    onSaved: tmplSaved
+  })))), /*#__PURE__*/React.createElement("footer", {
+    style: {
+      textAlign: 'center',
+      padding: '20px 0',
+      borderTop: '1px solid var(--bs)',
+      fontSize: 12,
+      color: 'var(--tm)'
+    }
+  }, "فصيح · FASIH \xA0·\xA0 v2.0")));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+requestAnimationFrame(() => {
+  const e = document.getElementById("ld");
+  if (e) e.style.display = "none";
+});
+
+</script>
+</body>
+</html>
