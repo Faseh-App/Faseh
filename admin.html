@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>لوحة تحكم فصيح</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📊%3C/text%3E%3C/svg%3E"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'IBM Plex Sans Arabic','Segoe UI',Tahoma,sans-serif;background:#F7F6F2;color:#1A1812;min-height:100vh;line-height:1.5}
+    .container{max-width:1200px;margin:0 auto;padding:32px 20px}
+
+    /* ─── شاشة الدخول ─── */
+    .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .login-card{background:#fff;border:1px solid #E2E0D5;border-radius:14px;padding:32px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.08)}
+    .login-card h1{font-family:'Aref Ruqaa',serif;font-size:30px;text-align:center;margin-bottom:8px}
+    .login-card .subtitle{text-align:center;color:#7C7763;font-size:14px;margin-bottom:24px}
+    .login-card label{display:block;font-size:13px;color:#3D3A2E;margin-bottom:6px;font-weight:600}
+    .login-card input{width:100%;padding:12px 14px;border:1.5px solid #E2E0D5;border-radius:9px;font-size:14px;background:#FCFCFB;color:#1A1812;outline:none;font-family:inherit;margin-bottom:14px}
+    .login-card input:focus{border-color:#A8854A}
+    .login-card .err{color:#9B3A3A;font-size:13px;min-height:18px;margin-bottom:10px}
+    .login-card button{width:100%;padding:13px;background:#1A1812;color:#fff;border:none;border-radius:9px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+    .login-card button:hover{background:#3D3A2E}
+    .login-card button:disabled{background:#A39E89;cursor:wait}
+
+    /* ─── لوحة التحكم ─── */
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .header h1{font-family:'Aref Ruqaa',serif;font-size:30px}
+    .header .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .btn{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit;display:inline-flex;align-items:center;gap:6px;transition:all .15s}
+    .btn-primary{background:#1A1812;color:#fff}
+    .btn-primary:hover{background:#3D3A2E}
+    .btn-secondary{background:#fff;color:#3D3A2E;border:1px solid #E2E0D5}
+    .btn-secondary:hover{border-color:#A8854A;color:#1A1812}
+    .btn-danger{background:#fff;color:#9B3A3A;border:1px solid #F5DEDE}
+    .btn-danger:hover{background:#F5DEDE}
+
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:28px}
+    .stat-card{background:#fff;border:1px solid #E2E0D5;border-radius:12px;padding:18px 20px}
+    .stat-card .label{font-size:12px;color:#7C7763;margin-bottom:6px;font-weight:600}
+    .stat-card .value{font-size:26px;font-weight:700;color:#1A1812;font-family:'IBM Plex Sans Arabic',serif}
+    .stat-card .sub{font-size:11px;color:#A39E89;margin-top:4px}
+    .stat-card.accent{background:linear-gradient(135deg,#FBF7EC,#F5EBC9);border-color:#EFDBA4}
+    .stat-card.accent .value{color:#6D5530}
+
+    .table-wrap{background:#fff;border:1px solid #E2E0D5;border-radius:12px;overflow:hidden}
+    .table-header{padding:18px 22px;border-bottom:1px solid #E2E0D5;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+    .table-header h2{font-size:18px;font-weight:600}
+    .table-header .search{padding:8px 12px;border:1.5px solid #E2E0D5;border-radius:8px;font-size:13px;background:#FCFCFB;outline:none;font-family:inherit;min-width:220px}
+    .table-header .search:focus{border-color:#A8854A}
+    table{width:100%;border-collapse:collapse}
+    thead th{background:#F7F6F2;padding:12px 18px;text-align:right;font-size:12px;font-weight:700;color:#3D3A2E;border-bottom:1px solid #E2E0D5;white-space:nowrap}
+    tbody td{padding:12px 18px;font-size:13px;color:#1A1812;border-bottom:1px solid #F0EFE8;vertical-align:middle}
+    tbody tr:hover{background:#FCFCFB}
+    tbody tr:last-child td{border-bottom:none}
+    .empty{padding:48px;text-align:center;color:#7C7763;font-size:14px}
+    .badge{display:inline-block;padding:2px 8px;background:#E8F2E2;color:#4A7C3B;border-radius:12px;font-size:11px;font-weight:600}
+    .badge.muted{background:#F7F6F2;color:#7C7763}
+    .email{font-family:'IBM Plex Mono',monospace;font-size:12px;color:#6D5530;direction:ltr;display:inline-block}
+    .date{font-size:12px;color:#7C7763;white-space:nowrap}
+    .num{font-weight:600;text-align:center}
+
+    .loading{padding:48px;text-align:center;color:#7C7763}
+    .spinner{display:inline-block;width:24px;height:24px;border:2.5px solid #E2E0D5;border-top-color:#A8854A;border-radius:50%;animation:spin .8s linear infinite;margin-bottom:8px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    @media (max-width:640px){
+      .container{padding:16px 12px}
+      .header h1{font-size:22px}
+      .stat-card .value{font-size:20px}
+      thead th,tbody td{padding:10px 12px;font-size:12px}
+    }
+  </style>
+</head>
+<body>
+
+<!-- شاشة الدخول -->
+<div id="login-screen" class="login-wrap">
+  <div class="login-card">
+    <h1>لوحة تحكم فصيح</h1>
+    <p class="subtitle">ادخل كلمة السر للوصول</p>
+    <label for="pass">كلمة السر</label>
+    <input id="pass" type="password" placeholder="••••••••" autocomplete="off"/>
+    <p class="err" id="login-err"></p>
+    <button id="login-btn">دخول</button>
+  </div>
+</div>
+
+<!-- لوحة التحكم -->
+<div id="dashboard" class="container" style="display:none">
+  <div class="header">
+    <h1>📊 لوحة تحكم فصيح</h1>
+    <div class="actions">
+      <button class="btn btn-secondary" id="refresh-btn">🔄 تحديث</button>
+      <button class="btn btn-primary" id="export-btn">⬇️ تصدير CSV</button>
+      <button class="btn btn-danger" id="logout-btn">تسجيل خروج</button>
+    </div>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="loading">جارٍ التحميل...</div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <h2>المستخدمون</h2>
+      <input type="text" class="search" id="search" placeholder="🔍 ابحث بالاسم أو الإيميل..."/>
+    </div>
+    <div id="table-container">
+      <div class="loading"><div class="spinner"></div><br/>جارٍ تحميل البيانات...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API_BASE = 'https://fasih-api.almalkimaha8.workers.dev';
+  const PASS_KEY = 'fasih:admin-pass';
+
+  let allUsers = [];
+
+  function getPass() { try { return sessionStorage.getItem(PASS_KEY) || ''; } catch(e){ return ''; } }
+  function setPass(p) { try { sessionStorage.setItem(PASS_KEY, p); } catch(e){} }
+  function clearPass() { try { sessionStorage.removeItem(PASS_KEY); } catch(e){} }
+
+  async function apiCall(path) {
+    const r = await fetch(API_BASE + path, {
+      headers: { 'X-Admin-Password': getPass() }
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'حدث خطأ');
+    return data;
+  }
+
+  async function tryLogin(pass) {
+    const r = await fetch(API_BASE + '/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pass })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'خطأ');
+    return true;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '-';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch(e) { return iso.slice(0,10); }
+  }
+
+  function fmtRelative(iso) {
+    if (!iso) return '-';
+    try {
+      const d = new Date(iso);
+      const diff = Date.now() - d.getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'الآن';
+      if (mins < 60) return 'قبل ' + mins + ' دقيقة';
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return 'قبل ' + hrs + ' ساعة';
+      const days = Math.floor(hrs / 24);
+      if (days < 30) return 'قبل ' + days + ' يوم';
+      return fmtDate(iso);
+    } catch(e) { return iso; }
+  }
+
+  function renderStats(s) {
+    const c = document.getElementById('stats');
+    const todayUsd = parseFloat(s.estimatedCostToday) || 0;
+    const limitUsd = parseFloat(s.dailyLimitUsd) || 0;
+    const pct = limitUsd > 0 ? Math.round((todayUsd / limitUsd) * 100) : 0;
+    c.innerHTML =
+      '<div class="stat-card"><div class="label">إجمالي المستخدمين</div><div class="value">' + s.totalUsers + '</div><div class="sub">جميع من سجّل دخوله</div></div>' +
+      '<div class="stat-card"><div class="label">نشطون اليوم</div><div class="value">' + s.activeToday + '</div><div class="sub">استخدموا البرنامج اليوم</div></div>' +
+      '<div class="stat-card"><div class="label">طلبات اليوم</div><div class="value">' + s.requestsToday + '</div><div class="sub">' + s.totalRequestsAllTime + ' إجمالي منذ البداية</div></div>' +
+      '<div class="stat-card accent"><div class="label">تكلفة اليوم</div><div class="value">$' + s.estimatedCostToday + '</div><div class="sub">من أصل $' + s.dailyLimitUsd + ' (' + pct + '%)</div></div>';
+  }
+
+  function renderUsers(users) {
+    const c = document.getElementById('table-container');
+    if (!users.length) {
+      c.innerHTML = '<div class="empty">لا يوجد مستخدمون بعد</div>';
+      return;
+    }
+    let html = '<table><thead><tr>' +
+      '<th>#</th>' +
+      '<th>الاسم</th>' +
+      '<th>البريد الإلكتروني</th>' +
+      '<th>تاريخ التسجيل</th>' +
+      '<th>إجمالي الطلبات</th>' +
+      '<th>اليوم</th>' +
+      '<th>آخر استخدام</th>' +
+      '</tr></thead><tbody>';
+    users.forEach((u, i) => {
+      const lastDate = u.usageDate || '';
+      const isToday = lastDate === new Date().toISOString().slice(0,10);
+      html += '<tr>' +
+        '<td>' + (i+1) + '</td>' +
+        '<td><strong>' + escapeHtml(u.name) + '</strong></td>' +
+        '<td><span class="email">' + escapeHtml(u.email) + '</span></td>' +
+        '<td><span class="date">' + fmtDate(u.createdAt) + '</span></td>' +
+        '<td class="num">' + (u.totalRequests || 0) + '</td>' +
+        '<td>' + (isToday ? '<span class="badge">' + (u.usageCount || 0) + '</span>' : '<span class="badge muted">0</span>') + '</td>' +
+        '<td><span class="date">' + (lastDate ? fmtDate(lastDate) : '-') + '</span></td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    c.innerHTML = html;
+  }
+
+  function escapeHtml(s) {
+    return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function exportCSV() {
+    if (!allUsers.length) { alert('لا يوجد بيانات للتصدير'); return; }
+    const headers = ['الاسم','البريد الإلكتروني','تاريخ التسجيل','إجمالي الطلبات','استخدام اليوم','آخر استخدام'];
+    const rows = allUsers.map(u => [
+      u.name || '',
+      u.email || '',
+      u.createdAt ? u.createdAt.slice(0,10) : '',
+      u.totalRequests || 0,
+      u.usageCount || 0,
+      u.usageDate || ''
+    ]);
+    const csv = '\ufeff' + [headers, ...rows].map(row =>
+      row.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')
+    ).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fasih-users-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadDashboard() {
+    try {
+      document.getElementById('stats').innerHTML = '<div class="loading">جارٍ التحميل...</div>';
+      document.getElementById('table-container').innerHTML = '<div class="loading"><div class="spinner"></div><br/>جارٍ تحميل البيانات...</div>';
+      const [stats, users] = await Promise.all([apiCall('/admin/stats'), apiCall('/admin/users')]);
+      renderStats(stats);
+      allUsers = users.users;
+      renderUsers(allUsers);
+    } catch(e) {
+      if (String(e.message).includes('unauthorized')) {
+        clearPass();
+        showLogin();
+        return;
+      }
+      document.getElementById('table-container').innerHTML = '<div class="empty">⚠️ ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('dashboard').style.display = 'none';
+    setTimeout(() => document.getElementById('pass').focus(), 100);
+  }
+
+  function showDashboard() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    loadDashboard();
+  }
+
+  document.getElementById('login-btn').addEventListener('click', async () => {
+    const pass = document.getElementById('pass').value;
+    const err = document.getElementById('login-err');
+    const btn = document.getElementById('login-btn');
+    if (!pass) { err.textContent = 'الرجاء إدخال كلمة السر'; return; }
+    err.textContent = '';
+    btn.disabled = true; btn.textContent = 'جارٍ التحقق...';
+    try {
+      await tryLogin(pass);
+      setPass(pass);
+      showDashboard();
+    } catch(e) {
+      err.textContent = e.message || 'فشل تسجيل الدخول';
+    } finally {
+      btn.disabled = false; btn.textContent = 'دخول';
+    }
+  });
+
+  document.getElementById('pass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+
+  document.getElementById('refresh-btn').addEventListener('click', loadDashboard);
+  document.getElementById('export-btn').addEventListener('click', exportCSV);
+  document.getElementById('logout-btn').addEventListener('click', () => {
+    if (confirm('هل تريد تسجيل الخروج؟')) {
+      clearPass();
+      document.getElementById('pass').value = '';
+      showLogin();
+    }
+  });
+
+  document.getElementById('search').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) { renderUsers(allUsers); return; }
+    const filtered = allUsers.filter(u =>
+      (u.name||'').toLowerCase().includes(q) ||
+      (u.email||'').toLowerCase().includes(q)
+    );
+    renderUsers(filtered);
+  });
+
+  if (getPass()) showDashboard(); else showLogin();
+</script>
+</body>
+</html>
